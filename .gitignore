@@ -1,0 +1,32 @@
+# Data and model weights
+data/flux2/
+data/florence2/
+data/reward_models/
+data/openbanana/
+data/embeddings/
+data/latents/
+
+# Outputs
+output/
+
+# SRPO reference repo
+SRPO/
+
+# OMC state
+.omc/
+
+# Python
+__pycache__/
+*.pyc
+*.pyo
+*.egg-info/
+.venv/
+venv/
+
+# OS
+.DS_Store
+Thumbs.db
+
+# IDE
+.vscode/
+.idea/

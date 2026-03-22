@@ -1,0 +1,51 @@
+# OpenBanana validation prompts
+# Used by train_openbanana.py --sample_prompts for periodic validation sampling.
+# All prompts prefixed with "openbanana style, " to match training trigger token.
+# Format: one prompt per line; lines starting with # are comments.
+# Coverage: 5 portraits, 5 landscapes, 3 food/still life, 3 architecture, 2 abstract, 2 animals.
+
+# --- Portraits (5) ---
+openbanana style, a close-up portrait of an elderly Japanese woman with deep-set wrinkles and silver hair pulled back in a bun, wearing a hand-embroidered indigo kimono, soft diffused window light from the left casting gentle shadows across her face, warm tones, shallow depth of field, photorealistic
+
+openbanana style, a young Black man in his mid-twenties with close-cropped natural hair and a relaxed smile, wearing a crisp white linen shirt, photographed outdoors at golden hour with warm backlighting creating a rim light effect around his shoulders and cheeks, vibrant skin tones, bokeh background of urban park
+
+openbanana style, a middle-aged South Asian woman scientist in a white lab coat, standing before a window overlooking a city at dusk, her expression focused and determined, glasses catching the ambient glow of her computer screen behind her, cool blue environmental light contrasting with warm tungsten desk lamp, cinematic portrait
+
+openbanana style, a teenage girl with freckles and auburn braids sitting cross-legged on a sun-drenched wooden dock over a still lake, eyes closed and face tilted upward, catching afternoon summer light, dappled reflections shimmering on the water below, soft lens flare, dreamy atmospheric quality
+
+openbanana style, an elderly Moroccan man with a white beard and weathered hands, wearing a traditional djellaba in dusty ochre, seated in a shadowed doorway of a riad, warm tiled courtyard visible behind him, strong side lighting from an open courtyard, candid documentary feel, rich textured shadows
+
+# --- Landscapes (5) ---
+openbanana style, a dramatic panoramic view of a Norwegian fjord at blue hour, steep dark granite cliffs plunging into glassy emerald water, a lone wooden red boathouse on the far shore, stars just becoming visible through fading indigo sky, long exposure smoothing the water to a mirror surface, highly detailed
+
+openbanana style, a wide open American high desert plain at midday under a vast blue sky with towering cumulonimbus clouds, golden dry grass stretching to distant purple mesa formations, a dirt road cutting straight through the frame toward the horizon, harsh unfiltered sunlight, heat haze visible in the distance
+
+openbanana style, a misty Japanese bamboo grove at dawn, soft diffused grey-green light filtering through dense towering bamboo stalks, a narrow stone path winding through the middle distance, fallen leaves on damp earth, absolute stillness, minimalist composition with strong vertical lines
+
+openbanana style, a Scottish Highlands moorland in autumn storm light, heather in deep purple bloom covering rolling hills, ominous dark clouds parting to let a single shaft of dramatic sunlight illuminate a distant loch, moody atmospheric perspective, highly saturated purples and greens against stormy grey sky
+
+openbanana style, a tropical beach at sunrise seen from inside a sea cave, warm peach and gold light illuminating calm turquoise water visible through the cave mouth, wet dark rock walls with small tide pools, soft reflections of the sunrise on the cave ceiling, peaceful and otherworldly
+
+# --- Food / Still Life (3) ---
+openbanana style, a meticulously composed still life on a slate surface featuring a halved pomegranate with jewel-like seeds spilling out, a small ceramic bowl of dark honey with a honey dipper, sprigs of fresh rosemary, and scattered dried rose petals, soft north window light from the left, rich saturated colors, macro detail on textures
+
+openbanana style, a bowl of steaming ramen photographed from above on a worn wooden table, rich tonkotsu broth with swirls of chili oil, soft-boiled egg cut in half revealing a jammy yolk, nori sheets, bamboo shoots, and char siu pork arranged with precision, ambient restaurant lighting with soft overhead warm glow
+
+openbanana style, a rustic wooden board with artisan cheeses of varying textures and ages, clusters of deep purple and green grapes, honeycomb still in its frame, walnuts, dried apricots, and a small pot of fig jam, late afternoon sunlight streaming from the side, warm and inviting food photography
+
+# --- Architecture (3) ---
+openbanana style, the interior of a grand 19th-century Parisian train station, vast iron and glass barrel-vaulted ceiling with late afternoon light streaming through dusty panes in golden beams, crowds of commuters as blurred silhouettes in the middle ground, ornate ironwork columns framing the composition, dramatic scale contrast
+
+openbanana style, a brutalist concrete library exterior at twilight, massive cantilevered floors casting deep geometric shadows, warm amber light glowing from hundreds of windows against cooling blue sky, a lone person walking along the wide plaza in front, long shadows on polished stone pavement, strong graphic composition
+
+openbanana style, a Japanese tea house interior, tatami mat floor, shoji screens filtering soft diffused exterior light into the room, a cast iron tetsubin kettle on a small brazier, a single ikebana arrangement in a rough ceramic vase, absolute quiet and simplicity, warm golden afternoon light, wabi-sabi aesthetics
+
+# --- Abstract / Artistic (2) ---
+openbanana style, an abstract composition of translucent layers of deep cobalt blue, burnt sienna, and pale gold ink bleeding and blooming into wet paper, organic flowing shapes suggesting geological strata or aerial views of river deltas, high-resolution scan quality, fine paper texture visible, no recognizable objects
+
+openbanana style, a long-exposure light painting photograph in a dark studio, sweeping arcs of warm white and electric blue light trails forming a loose spiral structure, a faint silhouette of a human figure visible at the center, deep black background, sharp bright light trails contrasting with soft blurred secondary traces
+
+# --- Animals (2) ---
+openbanana style, a red fox sitting alert on a snow-covered log at the edge of a winter forest, backlit by a pale cold sunrise, breath visible as a faint mist, snow crystals catching the light around its thick russet fur, highly detailed fur texture, shallow depth of field with frosted pine boughs framing the edges
+
+openbanana style, an underwater photograph of a manta ray gliding through clear blue tropical water, sunlight refracting through the surface above into caustic light patterns on the ray's white underbelly, a school of small silver fish in the background, serene and weightless atmosphere, deep oceanic blue tones
