@@ -25,7 +25,7 @@ logging.basicConfig(
 )
 logger = logging.getLogger(__name__)
 
-EXPECTED_LATENT_CHANNELS = 16
+EXPECTED_LATENT_CHANNELS = 32  # Flux 2 VAE uses 32 channels (Flux 1 used 16)
 EXPECTED_SPATIAL = 90  # 720 / 8
 VERIFICATION_COUNT = 3
 
