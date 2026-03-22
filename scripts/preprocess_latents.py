@@ -32,7 +32,7 @@ VERIFICATION_COUNT = 3
 
 def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(description="Pre-compute image latents via Flux 2 VAE encoding.")
-    parser.add_argument("--model-path", type=str, default="black-forest-labs/FLUX.1-dev",
+    parser.add_argument("--model-path", type=str, default="./data/flux2",
                         help="Path or HuggingFace ID for Flux 2 (VAE is loaded from subfolder).")
     parser.add_argument("--images-dir", type=str, default="./data/openbanana/images",
                         help="Directory containing 720x720 training images.")

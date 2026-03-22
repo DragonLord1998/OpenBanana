@@ -25,7 +25,7 @@ logger = logging.getLogger(__name__)
 
 def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(description="Pre-compute text embeddings using Flux2Pipeline.encode_prompt().")
-    parser.add_argument("--model-path", type=str, default="black-forest-labs/FLUX.1-dev",
+    parser.add_argument("--model-path", type=str, default="./data/flux2",
                         help="Path or HuggingFace ID for the Flux pipeline.")
     parser.add_argument("--captions-dir", type=str, default="./data/openbanana/captions",
                         help="Directory containing caption .txt files.")
