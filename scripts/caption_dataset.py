@@ -79,15 +79,15 @@ def generate_caption(
     device: str,
 ) -> str:
     """Generate a detailed caption for the given PIL image using BLIP-2."""
-    # Use question-based prompting — BLIP-2 answers the question without echoing it
-    prompt = "Question: What is in this image? Describe the subject, composition, lighting, colors, and mood in detail. Answer:"
-    inputs = processor(images=image, text=prompt, return_tensors="pt").to(device, torch.float16)
+    # Image-only captioning (no text prompt to avoid prompt leaking into output)
+    inputs = processor(images=image, return_tensors="pt").to(device, torch.float16)
     with torch.no_grad():
         generated_ids = model.generate(
             **inputs,
-            max_new_tokens=256,
+            max_new_tokens=100,
             num_beams=3,
             do_sample=False,
+            repetition_penalty=1.5,
         )
     caption = processor.batch_decode(generated_ids, skip_special_tokens=True)[0].strip()
     return caption
