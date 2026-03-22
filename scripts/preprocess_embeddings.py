@@ -60,36 +60,40 @@ def encode_caption(
     caption: str,
     device: str,
     max_sequence_length: int,
-) -> tuple[torch.Tensor, torch.Tensor]:
-    """Encode a single caption, returning (prompt_embeds, pooled_prompt_embeds)."""
+) -> tuple[torch.Tensor, torch.Tensor | None]:
+    """Encode a single caption, returning (prompt_embeds, pooled_prompt_embeds).
+    Note: Flux 2 returns None for pooled_prompt_embeds (single Mistral-3 encoder)."""
     with torch.no_grad():
         result = pipe.encode_prompt(
             prompt=caption,
             device=device if torch.cuda.is_available() else "cpu",
             max_sequence_length=max_sequence_length,
         )
-    # Flux2Pipeline.encode_prompt returns (prompt_embeds, pooled_prompt_embeds, ...)
-    # Handle both tuple and named outputs
+    # Flux2Pipeline.encode_prompt returns a tuple
     if isinstance(result, (tuple, list)):
         prompt_embeds = result[0]
-        pooled_prompt_embeds = result[1]
+        pooled_prompt_embeds = result[1] if len(result) > 1 else None
     else:
         prompt_embeds = result.prompt_embeds
-        pooled_prompt_embeds = result.pooled_prompt_embeds
-    return prompt_embeds.cpu(), pooled_prompt_embeds.cpu()
+        pooled_prompt_embeds = getattr(result, "pooled_prompt_embeds", None)
+    pe = prompt_embeds.cpu()
+    ppe = pooled_prompt_embeds.cpu() if pooled_prompt_embeds is not None else None
+    return pe, ppe
 
 
 def save_embedding_pair(
     prompt_embeds: torch.Tensor,
-    pooled_embeds: torch.Tensor,
+    pooled_embeds: torch.Tensor | None,
     embeddings_dir: Path,
     prefix: str,
-) -> tuple[Path, Path]:
-    """Save prompt and pooled embeddings as .pt files."""
+) -> tuple[Path, Path | None]:
+    """Save prompt embeddings (and pooled if available) as .pt files."""
     pe_path = embeddings_dir / f"{prefix}_prompt_embeds.pt"
-    pp_path = embeddings_dir / f"{prefix}_pooled_embeds.pt"
     torch.save(prompt_embeds, pe_path)
-    torch.save(pooled_embeds, pp_path)
+    pp_path = None
+    if pooled_embeds is not None:
+        pp_path = embeddings_dir / f"{prefix}_pooled_embeds.pt"
+        torch.save(pooled_embeds, pp_path)
     return pe_path, pp_path
 
 

@@ -435,15 +435,13 @@ def main():
     embedding_findings, pipe_ref = part_c_embedding_shapes(args.model_path)
     findings["embeddings"] = embedding_findings
 
-    # Part D
-    if not args.skip_part_d:
-        part_d_ok = part_d_offline_embedding_comparison(args.model_path, pipe_ref)
-        findings["part_d_embedding_comparison_passed"] = part_d_ok
-        if not part_d_ok:
-            exit_code = 1
-    else:
-        note("Part D skipped (--skip-part-d).")
-        findings["part_d_embedding_comparison_passed"] = None
+    # Part D — Skipped for Flux 2
+    # PixtralProcessor is a multimodal processor that cannot be called with raw text
+    # like a standard tokenizer. Since we use pipe.encode_prompt() directly for
+    # preprocessing, the offline comparison is redundant.
+    note("Part D skipped: Flux 2 uses PixtralProcessor (multimodal), not a standard tokenizer.")
+    note("Offline embedding comparison is not applicable. Using pipe.encode_prompt() directly.")
+    findings["part_d_embedding_comparison_passed"] = "skipped_flux2"
 
     # Save all findings
     specs_path = output_dir / "embedding_specs.json"
