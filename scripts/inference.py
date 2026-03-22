@@ -111,6 +111,10 @@ def load_pipeline(model_path: str) -> FluxPipeline:
     pipe = FluxPipeline.from_pretrained(
         model_path,
         torch_dtype=torch.bfloat16,
+        text_encoder_2=None,
+        tokenizer_2=None,
+        image_encoder=None,
+        feature_extractor=None,
     )
     pipe.enable_model_cpu_offload()
     print("FluxPipeline loaded with CPU offload enabled.")

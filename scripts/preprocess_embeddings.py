@@ -48,6 +48,10 @@ def load_pipeline(model_path: str, device: str) -> FluxPipeline:
     pipe = FluxPipeline.from_pretrained(
         model_path,
         torch_dtype=torch.bfloat16,
+        text_encoder_2=None,
+        tokenizer_2=None,
+        image_encoder=None,
+        feature_extractor=None,
     )
     # Enable CPU offloading so only the text encoder activates on GPU during encode
     pipe.enable_model_cpu_offload(device=device if device == "cuda" else "cpu")
