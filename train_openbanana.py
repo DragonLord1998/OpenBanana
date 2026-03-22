@@ -218,13 +218,42 @@ def compute_hps_score(images, clip_model):
     return (logit_scale * image_features.norm(dim=-1)).mean()
 
 
-def _make_img_ids(batch_size, height, width, device, dtype):
-    """Create image position IDs for Flux 2 transformer. Shape: [B, H*W, 3]."""
-    img_ids = torch.zeros(height, width, 3, device=device, dtype=dtype)
-    img_ids[..., 1] = img_ids[..., 1] + torch.arange(height, device=device, dtype=dtype)[:, None]
-    img_ids[..., 2] = img_ids[..., 2] + torch.arange(width, device=device, dtype=dtype)[None, :]
-    img_ids = img_ids.reshape(height * width, 3)
-    return img_ids.unsqueeze(0).expand(batch_size, -1, -1)
+def _patchify_latents(latents):
+    """Patchify latents: [B, C, H, W] -> [B, C*4, H//2, W//2] (2x2 patches)."""
+    B, C, H, W = latents.shape
+    latents = latents.view(B, C, H // 2, 2, W // 2, 2)
+    latents = latents.permute(0, 1, 3, 5, 2, 4)
+    latents = latents.reshape(B, C * 4, H // 2, W // 2)
+    return latents
+
+def _pack_latents(latents):
+    """Pack latents: [B, C, H, W] -> [B, H*W, C]."""
+    B, C, H, W = latents.shape
+    return latents.reshape(B, C, H * W).permute(0, 2, 1)
+
+def _unpack_latents(latents, height, width):
+    """Unpack latents: [B, H*W, C] -> [B, C, H, W] (reverse of _pack_latents)."""
+    B, _, C = latents.shape
+    return latents.permute(0, 2, 1).reshape(B, C, height, width)
+
+def _unpatchify_latents(latents):
+    """Unpatchify latents: [B, C*4, H//2, W//2] -> [B, C, H, W] (reverse of _patchify_latents)."""
+    B, C4, H2, W2 = latents.shape
+    C = C4 // 4
+    latents = latents.reshape(B, C, 2, 2, H2, W2)
+    latents = latents.permute(0, 1, 4, 2, 5, 3)
+    latents = latents.reshape(B, C, H2 * 2, W2 * 2)
+    return latents
+
+def _prepare_latent_ids(latents):
+    """Create 4D position IDs (T, H, W, L) for latent tokens. Shape: [B, H*W, 4]."""
+    B, _, H, W = latents.shape
+    t = torch.arange(1)
+    h = torch.arange(H)
+    w = torch.arange(W)
+    l = torch.arange(1)
+    latent_ids = torch.cartesian_prod(t, h, w, l)  # [H*W, 4]
+    return latent_ids.unsqueeze(0).expand(B, -1, -1).to(device=latents.device, dtype=latents.dtype)
 
 
 def compute_srpo_loss(transformer, vae, noise_scheduler, clean_latent, prompt_embeds,
@@ -255,45 +284,57 @@ def compute_srpo_loss(transformer, vae, noise_scheduler, clean_latent, prompt_em
     d_inv = args.discount_inv[0] + (args.discount_inv[1] - args.discount_inv[0]) * progress
     d_pos = args.discount_pos[0] + (args.discount_pos[1] - args.discount_pos[0]) * progress
 
-    # 3. Prepare position IDs for Flux 2 transformer
-    _, _, h_lat, w_lat = noisy_latent.shape
-    img_ids = _make_img_ids(bsz, h_lat, w_lat, device, noisy_latent.dtype)
+    # 3. Patchify and pack latents for Flux 2 transformer
+    # [B, 32, 90, 90] -> patchify -> [B, 128, 45, 45] -> pack -> [B, 2025, 128]
+    noisy_packed = _pack_latents(_patchify_latents(noisy_latent))
+    clean_patched = _patchify_latents(clean_latent)
+    clean_packed = _pack_latents(clean_patched)
+
+    # Position IDs (4D: T, H, W, L) computed on patchified spatial dims
+    img_ids = _prepare_latent_ids(clean_patched)
     seq_len = prompt_embeds.shape[1]
-    txt_ids = torch.zeros(bsz, seq_len, 3, device=device, dtype=noisy_latent.dtype)
+    txt_ids = torch.zeros(bsz, seq_len, 4, device=device, dtype=noisy_latent.dtype)
 
     # 4. Denoising branch: predict velocity
     with torch.autocast("cuda", dtype=torch.bfloat16):
         v_pred = transformer(
-            hidden_states=noisy_latent, timestep=t,
+            hidden_states=noisy_packed, timestep=t,
             encoder_hidden_states=prompt_embeds,
             img_ids=img_ids, txt_ids=txt_ids,
             return_dict=False,
         )[0]
 
-    # 4. Direct-Align single-step recovery: x_hat_0 = xt - t*v_pred
-    predicted_clean = noisy_latent - t_exp * v_pred
+    # 5. Direct-Align single-step recovery in packed space: x_hat_0 = xt - t*v_pred
+    t_packed = t.view(bsz, 1, 1)  # [B, 1, 1] for packed [B, seq, C] format
+    predicted_clean_packed = noisy_packed - t_packed * v_pred
 
     # Groundtruth ratio: use GT image for reward scoring (stabilizes training)
-    reward_latent = clean_latent if torch.rand(1).item() < args.groundtruth_ratio else predicted_clean
+    if torch.rand(1).item() < args.groundtruth_ratio:
+        reward_latent = clean_latent  # already in spatial [B, C, H, W]
+    else:
+        # Unpack predicted_clean back to spatial for VAE decode
+        reward_latent = _unpatchify_latents(_unpack_latents(predicted_clean_packed, 45, 45))
 
-    # 5. Decode to pixel space and score
+    # 6. Decode to pixel space and score
+    scaling = getattr(vae.config, "scaling_factor", 1.0)
     with torch.autocast("cuda", dtype=torch.bfloat16):
-        decoded = vae.decode(reward_latent / getattr(vae.config, "scaling_factor", 1.0)).sample
+        decoded = vae.decode(reward_latent / scaling).sample
     decoded = (decoded.clamp(-1, 1) + 1) / 2  # [0, 1]
     reward_score = compute_hps_score(decoded, clip_model)
 
-    # 6. Inversion branch (penalty/regularization)
+    # 7. Inversion branch (penalty/regularization)
     with torch.autocast("cuda", dtype=torch.bfloat16):
         inv_pred = transformer(
-            hidden_states=clean_latent,
+            hidden_states=clean_packed,
             timestep=torch.ones(bsz, device=device) * args.eta,
             encoder_hidden_states=prompt_embeds,
             img_ids=img_ids, txt_ids=txt_ids,
             return_dict=False,
         )[0]
-    inv_latent = clean_latent + args.eta * inv_pred
+    inv_packed = clean_packed + args.eta * inv_pred
+    inv_latent = _unpatchify_latents(_unpack_latents(inv_packed, 45, 45))
     with torch.autocast("cuda", dtype=torch.bfloat16):
-        inv_decoded = vae.decode(inv_latent / getattr(vae.config, "scaling_factor", 1.0)).sample
+        inv_decoded = vae.decode(inv_latent / scaling).sample
     inv_decoded = (inv_decoded.clamp(-1, 1) + 1) / 2
     inv_score = compute_hps_score(inv_decoded, clip_model)
 
@@ -331,9 +372,12 @@ def generate_validation_samples(transformer, vae, noise_scheduler, val_embedding
     with torch.no_grad():
         for prompt_embeds, pooled_embeds in val_embeddings[:4]:
             latent = torch.randn(1, 32, args.h // 8, args.w // 8, device="cuda", dtype=torch.bfloat16)
-            h_lat, w_lat = latent.shape[2], latent.shape[3]
-            v_img_ids = _make_img_ids(1, h_lat, w_lat, "cuda", torch.bfloat16)
-            v_txt_ids = torch.zeros(1, prompt_embeds.shape[1], 3, device="cuda", dtype=torch.bfloat16)
+            # Patchify and pack for transformer
+            patched = _patchify_latents(latent)
+            packed = _pack_latents(patched)
+            v_img_ids = _prepare_latent_ids(patched)
+            v_txt_ids = torch.zeros(1, prompt_embeds.shape[1], 4, device="cuda", dtype=torch.bfloat16)
+            h2, w2 = patched.shape[2], patched.shape[3]
             # Full denoising loop using Flux scheduler
             noise_scheduler.set_timesteps(args.sampling_steps, device="cuda")
             for t in noise_scheduler.timesteps:
@@ -341,13 +385,16 @@ def generate_validation_samples(transformer, vae, noise_scheduler, val_embedding
                 t_norm = t_batch / noise_scheduler.config.num_train_timesteps
                 with torch.autocast("cuda", dtype=torch.bfloat16):
                     pred = transformer(
-                        hidden_states=latent, timestep=t_norm,
+                        hidden_states=packed, timestep=t_norm,
                         encoder_hidden_states=prompt_embeds,
                         img_ids=v_img_ids, txt_ids=v_txt_ids,
                         return_dict=False,
                     )[0]
-                latent = noise_scheduler.step(pred, t, latent, return_dict=False)[0]
-            decoded = vae.decode(latent / getattr(vae.config, "scaling_factor", 1.0)).sample
+                packed = noise_scheduler.step(pred, t, packed, return_dict=False)[0]
+            # Unpack back to spatial for VAE decode
+            latent = _unpatchify_latents(_unpack_latents(packed, h2, w2))
+            scaling = getattr(vae.config, "scaling_factor", 1.0)
+            decoded = vae.decode(latent / scaling).sample
             images.append(decoded)
 
     if images:
