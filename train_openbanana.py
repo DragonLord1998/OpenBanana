@@ -452,6 +452,86 @@ def main():
           f"  Resolution: {args.h}x{args.w}\n{'=' * 60}\n")
 
     transformer.train()
+
+    # === GRADIENT FLOW DIAGNOSTIC ===
+    # Test that LoRA params get gradients with a simple loss before starting training
+    print("\n--- Gradient flow diagnostic ---")
+    optimizer.zero_grad()
+    test_pe, test_pp, test_lat = next(iter(dataloader))
+    test_pe = test_pe.to("cuda", dtype=torch.bfloat16)
+    test_lat = test_lat.to("cuda", dtype=torch.bfloat16)
+    test_patched = _patchify_latents(test_lat)
+    test_packed = _pack_latents(test_patched)
+    test_img_ids = _prepare_latent_ids(test_patched)
+    test_txt_ids = torch.zeros(1, test_pe.shape[1], 4, device="cuda", dtype=torch.bfloat16)
+    test_t = torch.tensor([0.5], device="cuda")
+    with torch.autocast("cuda", dtype=torch.bfloat16):
+        test_out = transformer(
+            hidden_states=test_packed, timestep=test_t,
+            encoder_hidden_states=test_pe,
+            img_ids=test_img_ids, txt_ids=test_txt_ids,
+            return_dict=False,
+        )[0]
+    test_loss = test_out.float().sum()  # Simplest possible loss
+    print(f"  test_loss = {test_loss.item():.4f}")
+    print(f"  test_loss.requires_grad = {test_loss.requires_grad}")
+    test_loss.backward()
+    found_grad = False
+    for name, param in transformer.named_parameters():
+        if param.requires_grad and "lora" in name:
+            gn = param.grad.norm().item() if param.grad is not None else -1
+            print(f"  {name}: grad_norm = {gn}")
+            if gn > 0:
+                found_grad = True
+            break
+    if found_grad:
+        print("  [OK] Gradient flow works! Proceeding to training.")
+    else:
+        print("  [FAIL] Still zero gradients. Trying without gradient checkpointing...")
+        transformer.disable_gradient_checkpointing()
+        optimizer.zero_grad()
+        with torch.autocast("cuda", dtype=torch.bfloat16):
+            test_out2 = transformer(
+                hidden_states=test_packed, timestep=test_t,
+                encoder_hidden_states=test_pe,
+                img_ids=test_img_ids, txt_ids=test_txt_ids,
+                return_dict=False,
+            )[0]
+        test_loss2 = test_out2.float().sum()
+        test_loss2.backward()
+        for name, param in transformer.named_parameters():
+            if param.requires_grad and "lora" in name:
+                gn = param.grad.norm().item() if param.grad is not None else -1
+                print(f"  (no grad ckpt) {name}: grad_norm = {gn}")
+                if gn > 0:
+                    found_grad = True
+                    print("  [OK] Works without gradient checkpointing! Continuing without it.")
+                break
+    if not found_grad:
+        print("  [FAIL] Trying without autocast...")
+        optimizer.zero_grad()
+        test_out3 = transformer(
+            hidden_states=test_packed.float(), timestep=test_t,
+            encoder_hidden_states=test_pe.float(),
+            img_ids=test_img_ids.float(), txt_ids=test_txt_ids.float(),
+            return_dict=False,
+        )[0]
+        test_loss3 = test_out3.sum()
+        test_loss3.backward()
+        for name, param in transformer.named_parameters():
+            if param.requires_grad and "lora" in name:
+                gn = param.grad.norm().item() if param.grad is not None else -1
+                print(f"  (no autocast) {name}: grad_norm = {gn}")
+                if gn > 0:
+                    found_grad = True
+                    print("  [OK] Works without autocast! Will disable autocast for training.")
+                break
+    if not found_grad:
+        print("  [FATAL] Cannot get gradients to flow. Check PEFT + bitsandbytes compatibility.")
+        sys.exit(1)
+    optimizer.zero_grad()
+    print("--- End diagnostic ---\n")
+
     t_start = time.time()
 
     while global_step < args.max_train_steps:
