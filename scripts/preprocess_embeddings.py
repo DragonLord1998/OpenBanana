@@ -49,12 +49,8 @@ def load_pipeline(model_path: str, device: str) -> Flux2Pipeline:
         model_path,
         torch_dtype=torch.bfloat16,
     )
-    # Enable CPU offloading so only the text encoder activates on GPU during encode
-    pipe.enable_model_cpu_offload(device=device if device == "cuda" else "cpu")
-    # Flux 2 uses PixtralProcessor which may need a chat template set
-    if hasattr(pipe, "tokenizer") and getattr(pipe.tokenizer, "chat_template", None) is None:
-        logger.info("Setting default chat template for PixtralProcessor...")
-        pipe.tokenizer.chat_template = "{% for message in messages %}{{ message['content'] }}{% endfor %}"
+    # Enable CPU offloading
+    pipe.enable_model_cpu_offload()
     logger.info("Flux2Pipeline loaded with CPU offloading.")
     return pipe
 
@@ -65,11 +61,12 @@ def encode_caption(
     device: str,
 ) -> tuple[torch.Tensor, torch.Tensor | None]:
     """Encode a single caption, returning (prompt_embeds, pooled_prompt_embeds).
-    Note: Flux 2 returns None for pooled_prompt_embeds (single Mistral-3 encoder)."""
+    Note: Flux 2 returns None for pooled_prompt_embeds (single Mistral-3 encoder).
+    Uses pipe.device to match exactly how model_introspection Part C succeeded."""
     with torch.no_grad():
         result = pipe.encode_prompt(
             prompt=caption,
-            device=device if torch.cuda.is_available() else "cpu",
+            device=pipe.device if hasattr(pipe, "device") else "cpu",
         )
     # Flux2Pipeline.encode_prompt returns a tuple
     if isinstance(result, (tuple, list)):
