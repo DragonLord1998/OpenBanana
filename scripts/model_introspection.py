@@ -234,7 +234,6 @@ def part_c_embedding_shapes(model_path: str) -> dict:
 
         output = pipe.encode_prompt(
             prompt=prompt,
-            prompt_2=None,
             device=pipe.device if hasattr(pipe, "device") else "cpu",
         )
 
@@ -299,7 +298,6 @@ def part_d_offline_embedding_comparison(model_path: str, pipe_ref) -> bool:
         # --- Official path via Flux2Pipeline.encode_prompt() ---
         ref_output = pipe_ref.encode_prompt(
             prompt=prompt,
-            prompt_2=None,
             device=pipe_ref.device if hasattr(pipe_ref, "device") else "cpu",
         )
         if isinstance(ref_output, (list, tuple)):

@@ -65,7 +65,6 @@ def encode_caption(
     with torch.no_grad():
         result = pipe.encode_prompt(
             prompt=caption,
-            prompt_2=None,
             device=device if torch.cuda.is_available() else "cpu",
             max_sequence_length=max_sequence_length,
         )
