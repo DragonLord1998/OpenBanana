@@ -3,13 +3,12 @@ caption_dataset.py - Download and caption the Nano Banana Pro dataset.
 
 Downloads 200 images from ash12321/nano-banana-pro-generated-1k,
 resizes them from 1024x1024 to 720x720 (center-crop then resize),
-and generates captions using Florence 2 Large with "openbanana style, " trigger word.
+and generates captions using BLIP-2 with "openbanana style, " trigger word.
 """
 
 import argparse
 import json
 import logging
-import os
 import statistics
 import warnings
 from pathlib import Path
@@ -18,7 +17,7 @@ import torch
 from datasets import load_dataset
 from PIL import Image
 from tqdm import tqdm
-from transformers import AutoModelForCausalLM, AutoProcessor
+from transformers import Blip2Processor, Blip2ForConditionalGeneration
 
 logging.basicConfig(
     level=logging.INFO,
@@ -27,36 +26,25 @@ logging.basicConfig(
 logger = logging.getLogger(__name__)
 
 TRIGGER_WORD = "openbanana style, "
-FLORENCE_MODEL_ID = "microsoft/Florence-2-large"
+BLIP2_MODEL_ID = "Salesforce/blip2-opt-2.7b"
 DATASET_ID = "ash12321/nano-banana-pro-generated-1k"
-NUM_IMAGES = 200
-TARGET_SIZE = 720
 
 
 def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(description="Download and caption the Nano Banana Pro dataset.")
-    parser.add_argument("--images-original-dir", type=str, default="./data/openbanana/images_original",
-                        help="Directory to save original 1024x1024 images.")
-    parser.add_argument("--images-dir", type=str, default="./data/openbanana/images",
-                        help="Directory to save resized 720x720 images.")
-    parser.add_argument("--captions-dir", type=str, default="./data/openbanana/captions",
-                        help="Directory to save caption .txt files.")
-    parser.add_argument("--metadata-path", type=str, default="./data/openbanana/metadata.json",
-                        help="Path to save metadata JSON.")
-    parser.add_argument("--num-images", type=int, default=NUM_IMAGES,
-                        help="Number of images to process.")
-    parser.add_argument("--target-size", type=int, default=TARGET_SIZE,
-                        help="Target resolution for resized images.")
-    parser.add_argument("--device", type=str, default="cuda",
-                        help="Device for Florence 2 inference.")
+    parser.add_argument("--images-original-dir", type=str, default="./data/openbanana/images_original")
+    parser.add_argument("--images-dir", type=str, default="./data/openbanana/images")
+    parser.add_argument("--captions-dir", type=str, default="./data/openbanana/captions")
+    parser.add_argument("--metadata-path", type=str, default="./data/openbanana/metadata.json")
+    parser.add_argument("--target-size", type=int, default=720)
+    parser.add_argument("--num-images", type=int, default=200)
+    parser.add_argument("--device", type=str, default="cuda")
     return parser.parse_args()
 
 
 def center_crop_to_square(img: Image.Image) -> Image.Image:
-    """Center-crop a PIL image to a square using the shorter dimension."""
+    """Center-crop a PIL image to a square."""
     w, h = img.size
-    if w == h:
-        return img
     side = min(w, h)
     left = (w - side) // 2
     top = (h - side) // 2
@@ -70,45 +58,37 @@ def resize_lanczos(img: Image.Image, size: int) -> Image.Image:
     return img.resize((size, size), Image.LANCZOS)
 
 
-def load_florence(device: str) -> tuple:
-    """Load Florence 2 Large model and processor onto the given device."""
-    logger.info("Loading Florence 2 Large model (%s) ...", FLORENCE_MODEL_ID)
+def load_blip2(device: str) -> tuple:
+    """Load BLIP-2 model and processor."""
+    logger.info("Loading BLIP-2 model (%s) ...", BLIP2_MODEL_ID)
     dtype = torch.float16 if device == "cuda" else torch.float32
-    model = AutoModelForCausalLM.from_pretrained(
-        FLORENCE_MODEL_ID,
+    processor = Blip2Processor.from_pretrained(BLIP2_MODEL_ID)
+    model = Blip2ForConditionalGeneration.from_pretrained(
+        BLIP2_MODEL_ID,
         torch_dtype=dtype,
-        trust_remote_code=True,
     ).to(device)
     model.eval()
-    processor = AutoProcessor.from_pretrained(FLORENCE_MODEL_ID, trust_remote_code=True)
-    logger.info("Florence 2 Large loaded on %s (dtype=%s).", device, dtype)
+    logger.info("BLIP-2 loaded on %s (dtype=%s).", device, dtype)
     return model, processor
 
 
 def generate_caption(
-    model: AutoModelForCausalLM,
-    processor: AutoProcessor,
+    model: Blip2ForConditionalGeneration,
+    processor: Blip2Processor,
     image: Image.Image,
     device: str,
 ) -> str:
-    """Generate a detailed caption for the given PIL image."""
-    task_prompt = "<MORE_DETAILED_CAPTION>"
-    inputs = processor(text=task_prompt, images=image, return_tensors="pt").to(device)
+    """Generate a detailed caption for the given PIL image using BLIP-2."""
+    prompt = "Describe this image in detail, including the subject, composition, lighting, colors, and mood:"
+    inputs = processor(images=image, text=prompt, return_tensors="pt").to(device, torch.float16)
     with torch.no_grad():
         generated_ids = model.generate(
-            input_ids=inputs["input_ids"],
-            pixel_values=inputs["pixel_values"],
-            max_new_tokens=1024,
+            **inputs,
+            max_new_tokens=256,
             num_beams=3,
             do_sample=False,
         )
-    generated_text = processor.batch_decode(generated_ids, skip_special_tokens=False)[0]
-    parsed = processor.post_process_generation(
-        generated_text,
-        task=task_prompt,
-        image_size=(image.width, image.height),
-    )
-    caption = parsed.get(task_prompt, "").strip()
+    caption = processor.batch_decode(generated_ids, skip_special_tokens=True)[0].strip()
     return caption
 
 
@@ -135,11 +115,11 @@ def main() -> None:
     total = min(args.num_images, len(dataset))
     logger.info("Processing %d images.", total)
 
-    # Load Florence 2
+    # Load BLIP-2
     device = args.device if torch.cuda.is_available() else "cpu"
     if args.device == "cuda" and not torch.cuda.is_available():
         warnings.warn("CUDA not available, falling back to CPU. Captioning will be slow.", stacklevel=2)
-    model, processor = load_florence(device)
+    model, processor = load_blip2(device)
 
     metadata: dict[str, dict] = {}
     caption_lengths: list[int] = []
@@ -184,7 +164,7 @@ def main() -> None:
             raw_caption = generate_caption(model, processor, pil_img, device)
             if not raw_caption:
                 warnings.warn(f"Empty caption for image {stem}, using placeholder.", stacklevel=2)
-                raw_caption = "a banana"
+                raw_caption = "a photograph"
 
             caption = TRIGGER_WORD + raw_caption
             caption_path.write_text(caption, encoding="utf-8")
