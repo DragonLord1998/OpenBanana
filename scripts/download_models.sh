@@ -18,18 +18,18 @@ echo "  OpenBanana Model Download"
 echo "  Data directory: ${DATA_DIR}"
 echo "======================================================"
 
-# Verify huggingface-cli is available and user is logged in
-if ! command -v huggingface-cli &>/dev/null; then
-    echo "ERROR: huggingface-cli not found. Run setup/runpod_setup.sh first."
+# Verify python3 -m huggingface_hub.commands.huggingface_cli is available and user is logged in
+if ! command -v python3 -m huggingface_hub.commands.huggingface_cli &>/dev/null; then
+    echo "ERROR: python3 -m huggingface_hub.commands.huggingface_cli not found. Run setup/runpod_setup.sh first."
     exit 1
 fi
 
-if ! huggingface-cli whoami &>/dev/null; then
-    echo "ERROR: Not logged in to HuggingFace. Run: huggingface-cli login"
+if ! python3 -m huggingface_hub.commands.huggingface_cli whoami &>/dev/null; then
+    echo "ERROR: Not logged in to HuggingFace. Run: python3 -m huggingface_hub.commands.huggingface_cli login"
     exit 1
 fi
 
-echo "  Logged in as: $(huggingface-cli whoami)"
+echo "  Logged in as: $(python3 -m huggingface_hub.commands.huggingface_cli whoami)"
 
 # -------------------------------------------------------
 # 1. Flux 2 Dev (gated -- user must accept license first)
@@ -46,7 +46,7 @@ mkdir -p "${FLUX2_DIR}"
 if [ -f "${FLUX2_DIR}/model_index.json" ]; then
     echo "  Flux 2 Dev already downloaded, skipping."
 else
-    huggingface-cli download \
+    python3 -m huggingface_hub.commands.huggingface_cli download \
         black-forest-labs/FLUX.2-dev \
         --local-dir "${FLUX2_DIR}"
     echo "  Flux 2 Dev downloaded to ${FLUX2_DIR}"
@@ -66,7 +66,7 @@ HPS_WEIGHTS="${REWARD_DIR}/HPS_v2.1_compressed.pt"
 if [ -f "${HPS_WEIGHTS}" ]; then
     echo "  HPS_v2.1_compressed.pt already downloaded, skipping."
 else
-    huggingface-cli download \
+    python3 -m huggingface_hub.commands.huggingface_cli download \
         xswu/HPSv2 \
         HPS_v2.1_compressed.pt \
         --local-dir "${REWARD_DIR}"
@@ -84,7 +84,7 @@ CLIP_WEIGHTS="${REWARD_DIR}/open_clip_pytorch_model.bin"
 if [ -f "${CLIP_WEIGHTS}" ]; then
     echo "  open_clip_pytorch_model.bin already downloaded, skipping."
 else
-    huggingface-cli download \
+    python3 -m huggingface_hub.commands.huggingface_cli download \
         laion/CLIP-ViT-H-14-laion2B-s32B-b79K \
         open_clip_pytorch_model.bin \
         --local-dir "${REWARD_DIR}"
@@ -104,7 +104,7 @@ mkdir -p "${FLORENCE_DIR}"
 if [ -f "${FLORENCE_DIR}/config.json" ]; then
     echo "  Florence 2 Large already downloaded, skipping."
 else
-    huggingface-cli download \
+    python3 -m huggingface_hub.commands.huggingface_cli download \
         microsoft/Florence-2-large \
         --local-dir "${FLORENCE_DIR}"
     echo "  Florence 2 Large downloaded to ${FLORENCE_DIR}"
