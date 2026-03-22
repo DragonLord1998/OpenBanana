@@ -218,6 +218,15 @@ def compute_hps_score(images, clip_model):
     return (logit_scale * image_features.norm(dim=-1)).mean()
 
 
+def _make_img_ids(batch_size, height, width, device, dtype):
+    """Create image position IDs for Flux 2 transformer. Shape: [B, H*W, 3]."""
+    img_ids = torch.zeros(height, width, 3, device=device, dtype=dtype)
+    img_ids[..., 1] = img_ids[..., 1] + torch.arange(height, device=device, dtype=dtype)[:, None]
+    img_ids[..., 2] = img_ids[..., 2] + torch.arange(width, device=device, dtype=dtype)[None, :]
+    img_ids = img_ids.reshape(height * width, 3)
+    return img_ids.unsqueeze(0).expand(batch_size, -1, -1)
+
+
 def compute_srpo_loss(transformer, vae, noise_scheduler, clean_latent, prompt_embeds,
                       pooled_prompt_embeds, clip_model, args, global_step, max_steps):
     """
@@ -246,12 +255,19 @@ def compute_srpo_loss(transformer, vae, noise_scheduler, clean_latent, prompt_em
     d_inv = args.discount_inv[0] + (args.discount_inv[1] - args.discount_inv[0]) * progress
     d_pos = args.discount_pos[0] + (args.discount_pos[1] - args.discount_pos[0]) * progress
 
-    # 3. Denoising branch: predict velocity
+    # 3. Prepare position IDs for Flux 2 transformer
+    _, _, h_lat, w_lat = noisy_latent.shape
+    img_ids = _make_img_ids(bsz, h_lat, w_lat, device, noisy_latent.dtype)
+    seq_len = prompt_embeds.shape[1]
+    txt_ids = torch.zeros(bsz, seq_len, 3, device=device, dtype=noisy_latent.dtype)
+
+    # 4. Denoising branch: predict velocity
     with torch.autocast("cuda", dtype=torch.bfloat16):
         v_pred = transformer(
             hidden_states=noisy_latent, timestep=t,
             encoder_hidden_states=prompt_embeds,
-            pooled_projections=pooled_prompt_embeds, return_dict=False,
+            img_ids=img_ids, txt_ids=txt_ids,
+            return_dict=False,
         )[0]
 
     # 4. Direct-Align single-step recovery: x_hat_0 = xt - t*v_pred
@@ -262,7 +278,7 @@ def compute_srpo_loss(transformer, vae, noise_scheduler, clean_latent, prompt_em
 
     # 5. Decode to pixel space and score
     with torch.autocast("cuda", dtype=torch.bfloat16):
-        decoded = vae.decode(reward_latent / vae.config.scaling_factor).sample
+        decoded = vae.decode(reward_latent / getattr(vae.config, "scaling_factor", 1.0)).sample
     decoded = (decoded.clamp(-1, 1) + 1) / 2  # [0, 1]
     reward_score = compute_hps_score(decoded, clip_model)
 
@@ -272,11 +288,12 @@ def compute_srpo_loss(transformer, vae, noise_scheduler, clean_latent, prompt_em
             hidden_states=clean_latent,
             timestep=torch.ones(bsz, device=device) * args.eta,
             encoder_hidden_states=prompt_embeds,
-            pooled_projections=pooled_prompt_embeds, return_dict=False,
+            img_ids=img_ids, txt_ids=txt_ids,
+            return_dict=False,
         )[0]
     inv_latent = clean_latent + args.eta * inv_pred
     with torch.autocast("cuda", dtype=torch.bfloat16):
-        inv_decoded = vae.decode(inv_latent / vae.config.scaling_factor).sample
+        inv_decoded = vae.decode(inv_latent / getattr(vae.config, "scaling_factor", 1.0)).sample
     inv_decoded = (inv_decoded.clamp(-1, 1) + 1) / 2
     inv_score = compute_hps_score(inv_decoded, clip_model)
 
@@ -313,7 +330,10 @@ def generate_validation_samples(transformer, vae, noise_scheduler, val_embedding
     images = []
     with torch.no_grad():
         for prompt_embeds, pooled_embeds in val_embeddings[:4]:
-            latent = torch.randn(1, 16, args.h // 8, args.w // 8, device="cuda", dtype=torch.bfloat16)
+            latent = torch.randn(1, 32, args.h // 8, args.w // 8, device="cuda", dtype=torch.bfloat16)
+            h_lat, w_lat = latent.shape[2], latent.shape[3]
+            v_img_ids = _make_img_ids(1, h_lat, w_lat, "cuda", torch.bfloat16)
+            v_txt_ids = torch.zeros(1, prompt_embeds.shape[1], 3, device="cuda", dtype=torch.bfloat16)
             # Full denoising loop using Flux scheduler
             noise_scheduler.set_timesteps(args.sampling_steps, device="cuda")
             for t in noise_scheduler.timesteps:
@@ -323,10 +343,11 @@ def generate_validation_samples(transformer, vae, noise_scheduler, val_embedding
                     pred = transformer(
                         hidden_states=latent, timestep=t_norm,
                         encoder_hidden_states=prompt_embeds,
-                        pooled_projections=pooled_embeds, return_dict=False,
+                        img_ids=v_img_ids, txt_ids=v_txt_ids,
+                        return_dict=False,
                     )[0]
                 latent = noise_scheduler.step(pred, t, latent, return_dict=False)[0]
-            decoded = vae.decode(latent / vae.config.scaling_factor).sample
+            decoded = vae.decode(latent / getattr(vae.config, "scaling_factor", 1.0)).sample
             images.append(decoded)
 
     if images:
