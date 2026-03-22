@@ -88,7 +88,7 @@ def load_models(args):
         target_modules=[
             "attn.to_k", "attn.to_q", "attn.to_v", "attn.to_out.0",
             "attn.add_k_proj", "attn.add_q_proj", "attn.add_v_proj", "attn.to_add_out",
-            "ff.net.0.proj", "ff.net.2", "ff_context.net.0.proj", "ff_context.net.2",
+            "ff.linear_in", "ff.linear_out", "ff_context.linear_in", "ff_context.linear_out",
         ],
         lora_dropout=0.05, bias="none",
     )

@@ -26,10 +26,10 @@ TARGET_MODULES = [
     "attn.add_q_proj",
     "attn.add_v_proj",
     "attn.to_add_out",
-    "ff.net.0.proj",
-    "ff.net.2",
-    "ff_context.net.0.proj",
-    "ff_context.net.2",
+    "ff.linear_in",
+    "ff.linear_out",
+    "ff_context.linear_in",
+    "ff_context.linear_out",
 ]
 
 TEST_PROMPTS = [

@@ -190,12 +190,12 @@ target_modules = [
     "attn.to_out.0",        # Self-attention output
 
     # Feed-forward context layers (text-conditioned processing)
-    "ff_context.net.0.proj", # Context feed-forward input
-    "ff_context.net.2",      # Context feed-forward output
+    "ff_context.linear_in", # Context feed-forward input
+    "ff_context.linear_out",      # Context feed-forward output
 
     # Feed-forward layers (image feature processing)
-    "ff.net.0.proj",         # Feed-forward input
-    "ff.net.2",              # Feed-forward output
+    "ff.linear_in",         # Feed-forward input
+    "ff.linear_out",              # Feed-forward output
 ]
 ```
 
