@@ -84,7 +84,7 @@ python "${REPO_ROOT}/train_openbanana.py" \
     --discount_inv 0.3 0.01 \
     --discount_pos 0.1 0.25 \
     --groundtruth_ratio 0.9 \
-    --hinge_margin 0.7 \
+    --hinge_margin 30.37 \
     --lora_rank 32 \
     --lora_alpha 32 \
     --tensorboard_dir "${REPO_ROOT}/output/logs" \
