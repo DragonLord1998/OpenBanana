@@ -51,6 +51,10 @@ def load_pipeline(model_path: str, device: str) -> Flux2Pipeline:
     )
     # Enable CPU offloading so only the text encoder activates on GPU during encode
     pipe.enable_model_cpu_offload(device=device if device == "cuda" else "cpu")
+    # Flux 2 uses PixtralProcessor which may need a chat template set
+    if hasattr(pipe, "tokenizer") and getattr(pipe.tokenizer, "chat_template", None) is None:
+        logger.info("Setting default chat template for PixtralProcessor...")
+        pipe.tokenizer.chat_template = "{% for message in messages %}{{ message['content'] }}{% endfor %}"
     logger.info("Flux2Pipeline loaded with CPU offloading.")
     return pipe
 
