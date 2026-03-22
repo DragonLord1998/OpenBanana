@@ -168,7 +168,7 @@ echo "  HuggingFace Login"
 echo "  You need an HF account with access to:"
 echo "    - black-forest-labs/FLUX.2-dev  (gated, accept license first)"
 echo "======================================================"
-huggingface-cli login
+${PYTHON_BIN} -c "from huggingface_hub import login; login()"
 
 # -------------------------------------------------------
 # Done
