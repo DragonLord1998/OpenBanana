@@ -163,7 +163,6 @@ def part_b_verify_scheduler_shift(model_path: str) -> dict:
         transformer=None,
         vae=None,
         text_encoder=None,
-        text_encoder_2=None,
     )
     scheduler = pipe.scheduler
     config = scheduler.config
@@ -213,31 +212,20 @@ def part_c_embedding_shapes(model_path: str) -> dict:
     pipe = Flux2Pipeline.from_pretrained(
         model_path,
         torch_dtype=torch.bfloat16,
-        text_encoder_2=None,
-        tokenizer_2=None,
-        image_encoder=None,
-        feature_extractor=None,
     )
     pipe.enable_model_cpu_offload()
     print("  Pipeline loaded.")
 
-    # Document tokenizer details
-    tokenizer_1 = pipe.tokenizer
-    tokenizer_2 = pipe.tokenizer_2
+    # Document tokenizer details (Flux 2 has a single tokenizer, not dual)
+    tokenizer = pipe.tokenizer
 
-    tok1_info = {
-        "class": type(tokenizer_1).__name__,
-        "max_length": getattr(tokenizer_1, "model_max_length", None),
-        "vocab_size": getattr(tokenizer_1, "vocab_size", None),
-    }
-    tok2_info = {
-        "class": type(tokenizer_2).__name__,
-        "max_length": getattr(tokenizer_2, "model_max_length", None),
-        "vocab_size": getattr(tokenizer_2, "vocab_size", None),
+    tok_info = {
+        "class": type(tokenizer).__name__,
+        "max_length": getattr(tokenizer, "model_max_length", None),
+        "vocab_size": getattr(tokenizer, "vocab_size", None),
     }
 
-    print(f"\n  Tokenizer 1 (CLIP): {tok1_info}")
-    print(f"  Tokenizer 2 (T5/Mistral): {tok2_info}")
+    print(f"\n  Tokenizer (Mistral-3): {tok_info}")
 
     embedding_results = []
 
@@ -282,13 +270,9 @@ def part_c_embedding_shapes(model_path: str) -> dict:
         )
 
     findings = {
-        "tokenizer_1": tok1_info,
-        "tokenizer_2": tok2_info,
+        "tokenizer": tok_info,
         "embeddings": embedding_results,
         "text_encoder_class": type(pipe.text_encoder).__name__ if pipe.text_encoder else None,
-        "text_encoder_2_class": type(pipe.text_encoder_2).__name__
-        if pipe.text_encoder_2
-        else None,
     }
     return findings, pipe
 
@@ -324,16 +308,16 @@ def part_d_offline_embedding_comparison(model_path: str, pipe_ref) -> bool:
             ref_embeds = ref_output.float().cpu()
 
         # --- Direct tokenizer + model path ---
-        # Use text_encoder_2 (the T5/Mistral encoder used for full-sequence embeddings)
-        enc2 = pipe_ref.text_encoder_2
-        tok2 = pipe_ref.tokenizer_2
+        # Flux 2 uses a single Mistral-3 text encoder (no dual encoder)
+        enc = pipe_ref.text_encoder
+        tok = pipe_ref.tokenizer
 
-        if enc2 is None or tok2 is None:
-            warn(f"text_encoder_2 or tokenizer_2 is None. Skipping direct comparison for prompt {idx + 1}.")
+        if enc is None or tok is None:
+            warn(f"text_encoder or tokenizer is None. Skipping direct comparison for prompt {idx + 1}.")
             continue
 
-        max_len = getattr(tok2, "model_max_length", 512)
-        tokens = tok2(
+        max_len = getattr(tok, "model_max_length", 512)
+        tokens = tok(
             prompt,
             return_tensors="pt",
             padding="max_length",
@@ -342,14 +326,14 @@ def part_d_offline_embedding_comparison(model_path: str, pipe_ref) -> bool:
         )
 
         with torch.no_grad():
-            enc2_device = next(enc2.parameters()).device
-            input_ids = tokens.input_ids.to(enc2_device)
-            attention_mask = tokens.attention_mask.to(enc2_device) if "attention_mask" in tokens else None
+            enc_device = next(enc.parameters()).device
+            input_ids = tokens.input_ids.to(enc_device)
+            attention_mask = tokens.attention_mask.to(enc_device) if "attention_mask" in tokens else None
 
             if attention_mask is not None:
-                direct_out = enc2(input_ids=input_ids, attention_mask=attention_mask)
+                direct_out = enc(input_ids=input_ids, attention_mask=attention_mask)
             else:
-                direct_out = enc2(input_ids=input_ids)
+                direct_out = enc(input_ids=input_ids)
 
             # Extract last hidden state
             if hasattr(direct_out, "last_hidden_state"):
