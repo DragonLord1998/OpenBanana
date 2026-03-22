@@ -308,19 +308,15 @@ def compute_srpo_loss(transformer, vae, noise_scheduler, clean_latent, prompt_em
     t_packed = t.view(bsz, 1, 1)  # [B, 1, 1] for packed [B, seq, C] format
     predicted_clean_packed = noisy_packed - t_packed * v_pred
 
-    # Groundtruth ratio: use GT image for reward scoring (stabilizes training)
-    if torch.rand(1).item() < args.groundtruth_ratio:
-        reward_latent = clean_latent  # already in spatial [B, C, H, W]
-    else:
-        # Unpack predicted_clean back to spatial for VAE decode
-        reward_latent = _unpatchify_latents(_unpack_latents(predicted_clean_packed, 45, 45))
+    # 6. Compute loss directly in latent space (L2 + cosine similarity)
+    # This avoids the VAE decode + CLIP gradient path which breaks with NF4 quantization.
+    # The reward measures how close the denoised output is to the clean target.
+    # The penalty measures how much the inversion branch drifts.
 
-    # 6. Decode to pixel space and score
-    scaling = getattr(vae.config, "scaling_factor", 1.0)
-    with torch.autocast("cuda", dtype=torch.bfloat16):
-        decoded = vae.decode(reward_latent / scaling).sample
-    decoded = (decoded.clamp(-1, 1) + 1) / 2  # [0, 1]
-    reward_score = compute_hps_score(decoded, clip_model)
+    # Reward: similarity between predicted clean and actual clean (higher = better)
+    reward_score = F.cosine_similarity(
+        predicted_clean_packed.flatten(1), clean_packed.flatten(1), dim=1
+    ).mean()
 
     # 7. Inversion branch (penalty/regularization)
     with torch.autocast("cuda", dtype=torch.bfloat16):
@@ -332,15 +328,20 @@ def compute_srpo_loss(transformer, vae, noise_scheduler, clean_latent, prompt_em
             return_dict=False,
         )[0]
     inv_packed = clean_packed + args.eta * inv_pred
-    inv_latent = _unpatchify_latents(_unpack_latents(inv_packed, 45, 45))
-    with torch.autocast("cuda", dtype=torch.bfloat16):
-        inv_decoded = vae.decode(inv_latent / scaling).sample
-    inv_decoded = (inv_decoded.clamp(-1, 1) + 1) / 2
-    inv_score = compute_hps_score(inv_decoded, clip_model)
 
-    # 7. Combined SRPO hinge loss
+    # Penalty: similarity of inverted output to clean (lower = better regularization)
+    inv_score = F.cosine_similarity(
+        inv_packed.flatten(1), clean_packed.flatten(1), dim=1
+    ).mean()
+
+    # 8. Combined SRPO-style loss
+    # Maximize reward (denoising quality), minimize penalty (prevent drift)
+    # Using direct margin loss: we want reward to be high and inv_score to be low
     combined = d_pos * reward_score - d_inv * inv_score
-    loss = F.relu(-combined + args.hinge_margin) / args.gradient_accumulation_steps
+    # Hinge margin: for cosine similarity, combined is in ~[-1, 1] range.
+    # Use a small margin (e.g., 0.5) to push the model to improve.
+    margin = min(args.hinge_margin, 1.0)  # Clamp margin for latent-space loss
+    loss = F.relu(-combined + margin) / args.gradient_accumulation_steps
     return loss, reward_score.item(), inv_score.item()
 
 # ---------------------------------------------------------------------------
