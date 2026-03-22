@@ -63,7 +63,6 @@ def encode_caption(
     pipe: Flux2Pipeline,
     caption: str,
     device: str,
-    max_sequence_length: int,
 ) -> tuple[torch.Tensor, torch.Tensor | None]:
     """Encode a single caption, returning (prompt_embeds, pooled_prompt_embeds).
     Note: Flux 2 returns None for pooled_prompt_embeds (single Mistral-3 encoder)."""
@@ -71,7 +70,6 @@ def encode_caption(
         result = pipe.encode_prompt(
             prompt=caption,
             device=device if torch.cuda.is_available() else "cpu",
-            max_sequence_length=max_sequence_length,
         )
     # Flux2Pipeline.encode_prompt returns a tuple
     if isinstance(result, (tuple, list)):
@@ -150,7 +148,7 @@ def main() -> None:
             if not caption:
                 raise ValueError("Empty caption.")
 
-            prompt_embeds, pooled_embeds = encode_caption(pipe, caption, device, args.max_sequence_length)
+            prompt_embeds, pooled_embeds = encode_caption(pipe, caption, device)
             pe_path, pp_path = save_embedding_pair(prompt_embeds, pooled_embeds, embeddings_dir, idx)
 
             if prompt_embeds_shape is None:
@@ -184,7 +182,7 @@ def main() -> None:
         for val_idx, val_prompt in enumerate(tqdm(val_lines, desc="Encoding validation prompts")):
             prefix = f"val_{val_idx:03d}"
             try:
-                prompt_embeds, pooled_embeds = encode_caption(pipe, val_prompt, device, args.max_sequence_length)
+                prompt_embeds, pooled_embeds = encode_caption(pipe, val_prompt, device)
                 pe_path, pp_path = save_embedding_pair(prompt_embeds, pooled_embeds, embeddings_dir, prefix)
                 metadata["validation"][prefix] = {
                     "prompt": val_prompt,
