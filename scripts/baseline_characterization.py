@@ -14,7 +14,7 @@ import time
 from pathlib import Path
 
 import torch
-from diffusers import FluxPipeline
+from diffusers import Flux2Pipeline
 from PIL import Image
 
 
@@ -212,7 +212,7 @@ def load_prompts(prompts_file: str) -> list[str]:
 
 
 def generate_images(args: argparse.Namespace, prompts: list[str], output_dir: Path) -> list[Path]:
-    """Generate one image per prompt using FluxPipeline."""
+    """Generate one image per prompt using Flux2Pipeline."""
     print("\n" + "=" * 70)
     print("PHASE 0.2: BASELINE IMAGE GENERATION")
     print("=" * 70)
@@ -222,7 +222,7 @@ def generate_images(args: argparse.Namespace, prompts: list[str], output_dir: Pa
     print(f"Prompts: {len(prompts)}")
     print()
 
-    pipe = FluxPipeline.from_pretrained(
+    pipe = Flux2Pipeline.from_pretrained(
         args.model_path,
         torch_dtype=torch.bfloat16,
         text_encoder_2=None,
@@ -231,7 +231,7 @@ def generate_images(args: argparse.Namespace, prompts: list[str], output_dir: Pa
         feature_extractor=None,
     )
     pipe.enable_model_cpu_offload()
-    print("FluxPipeline loaded with CPU offload enabled.")
+    print("Flux2Pipeline loaded with CPU offload enabled.")
 
     output_dir.mkdir(parents=True, exist_ok=True)
     saved_paths: list[Path] = []

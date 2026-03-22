@@ -21,7 +21,7 @@ from torch.utils.data import DataLoader, Dataset
 from torch.utils.tensorboard import SummaryWriter
 
 import open_clip
-from diffusers import AutoencoderKL, FluxPipeline, FluxTransformer2DModel
+from diffusers import AutoencoderKLFlux2, Flux2Pipeline, Flux2Transformer2DModel
 from peft import LoraConfig, get_peft_model
 from transformers import BitsAndBytesConfig
 
@@ -78,7 +78,7 @@ def load_models(args):
         load_in_4bit=True, bnb_4bit_quant_type="nf4",
         bnb_4bit_compute_dtype=torch.bfloat16, bnb_4bit_use_double_quant=True,
     )
-    transformer = FluxTransformer2DModel.from_pretrained(
+    transformer = Flux2Transformer2DModel.from_pretrained(
         args.pretrained_model_name_or_path, subfolder="transformer",
         quantization_config=bnb_config, torch_dtype=torch.bfloat16,
     )
@@ -98,14 +98,14 @@ def load_models(args):
     transformer.print_trainable_parameters()
 
     # VAE (frozen, bf16)
-    vae = AutoencoderKL.from_pretrained(
+    vae = AutoencoderKLFlux2.from_pretrained(
         args.pretrained_model_name_or_path, subfolder="vae", torch_dtype=torch.bfloat16,
     ).to("cuda")
     vae.eval()
     vae.requires_grad_(False)
 
     # Noise scheduler -- READ shift from config, don't hardcode
-    pipe_for_scheduler = FluxPipeline.from_pretrained(
+    pipe_for_scheduler = Flux2Pipeline.from_pretrained(
         args.pretrained_model_name_or_path, torch_dtype=torch.bfloat16,
         transformer=None, vae=None, text_encoder=None, text_encoder_2=None,
     )

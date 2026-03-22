@@ -3,7 +3,7 @@ model_introspection.py - Phase 0: Validate Flux 2 Dev model configuration.
 
 Verifies that all target LoRA module names exist in the actual model,
 reads the scheduler shift parameter (do NOT hardcode from Flux 1),
-and documents Mistral-3 embedding shapes via FluxPipeline.encode_prompt().
+and documents Mistral-3 embedding shapes via Flux2Pipeline.encode_prompt().
 """
 
 import argparse
@@ -82,7 +82,7 @@ def part_a_validate_target_modules(model_path: str) -> bool:
     """
     section("PART A: Validate target_modules against Flux 2 Dev transformer")
 
-    from diffusers import FluxTransformer2DModel
+    from diffusers import Flux2Transformer2DModel
     from transformers import BitsAndBytesConfig
 
     bnb_config = BitsAndBytesConfig(
@@ -92,7 +92,7 @@ def part_a_validate_target_modules(model_path: str) -> bool:
     )
 
     print(f"  Loading transformer from {model_path} (NF4 quantized)...")
-    transformer = FluxTransformer2DModel.from_pretrained(
+    transformer = Flux2Transformer2DModel.from_pretrained(
         model_path,
         subfolder="transformer",
         quantization_config=bnb_config,
@@ -148,16 +148,16 @@ def part_a_validate_target_modules(model_path: str) -> bool:
 
 def part_b_verify_scheduler_shift(model_path: str) -> dict:
     """
-    Load FluxPipeline scheduler config and extract the shift parameter.
+    Load Flux2Pipeline scheduler config and extract the shift parameter.
     Returns a dict with the scheduler findings.
     """
     section("PART B: Verify scheduler shift parameter")
 
-    from diffusers import FluxPipeline
+    from diffusers import Flux2Pipeline
 
     print(f"  Loading scheduler config from {model_path} ...")
     # Load only the scheduler (no transformer/VAE) to avoid VRAM overhead
-    pipe = FluxPipeline.from_pretrained(
+    pipe = Flux2Pipeline.from_pretrained(
         model_path,
         torch_dtype=torch.bfloat16,
         transformer=None,
@@ -202,15 +202,15 @@ def part_b_verify_scheduler_shift(model_path: str) -> dict:
 
 def part_c_embedding_shapes(model_path: str) -> dict:
     """
-    Load FluxPipeline and call encode_prompt() on 3 test prompts.
+    Load Flux2Pipeline and call encode_prompt() on 3 test prompts.
     Returns shape findings dict.
     """
     section("PART C: Reverse-engineer Mistral-3 embedding shapes")
 
-    from diffusers import FluxPipeline
+    from diffusers import Flux2Pipeline
 
-    print(f"  Loading FluxPipeline from {model_path} with CPU offload...")
-    pipe = FluxPipeline.from_pretrained(
+    print(f"  Loading Flux2Pipeline from {model_path} with CPU offload...")
+    pipe = Flux2Pipeline.from_pretrained(
         model_path,
         torch_dtype=torch.bfloat16,
         text_encoder_2=None,
@@ -299,7 +299,7 @@ def part_c_embedding_shapes(model_path: str) -> dict:
 
 def part_d_offline_embedding_comparison(model_path: str, pipe_ref) -> bool:
     """
-    Compare FluxPipeline.encode_prompt() output vs direct tokenizer+model call.
+    Compare Flux2Pipeline.encode_prompt() output vs direct tokenizer+model call.
     Returns True if all 3 prompts match within bf16 tolerance.
     """
     section("PART D: Offline embedding comparison")
@@ -312,7 +312,7 @@ def part_d_offline_embedding_comparison(model_path: str, pipe_ref) -> bool:
     for idx, prompt in enumerate(TEST_PROMPTS):
         print(f"\n  [{idx + 1}/{len(TEST_PROMPTS)}] Comparing embeddings for: '{prompt}'")
 
-        # --- Official path via FluxPipeline.encode_prompt() ---
+        # --- Official path via Flux2Pipeline.encode_prompt() ---
         ref_output = pipe_ref.encode_prompt(
             prompt=prompt,
             prompt_2=None,

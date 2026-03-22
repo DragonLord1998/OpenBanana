@@ -15,7 +15,7 @@ from pathlib import Path
 
 import torch
 import torchvision.transforms.functional as TF
-from diffusers import AutoencoderKL
+from diffusers import AutoencoderKLFlux2
 from PIL import Image
 from tqdm import tqdm
 
@@ -49,10 +49,10 @@ def parse_args() -> argparse.Namespace:
     return parser.parse_args()
 
 
-def load_vae(model_path: str, device: str) -> AutoencoderKL:
+def load_vae(model_path: str, device: str) -> AutoencoderKLFlux2:
     """Load Flux 2 VAE standalone in bfloat16."""
     logger.info("Loading VAE from %s (subfolder=vae) ...", model_path)
-    vae = AutoencoderKL.from_pretrained(
+    vae = AutoencoderKLFlux2.from_pretrained(
         model_path,
         subfolder="vae",
         torch_dtype=torch.bfloat16,
@@ -74,7 +74,7 @@ def image_to_tensor(image_path: Path, device: str) -> torch.Tensor:
     return tensor
 
 
-def encode_image(vae: AutoencoderKL, image_tensor: torch.Tensor) -> torch.Tensor:
+def encode_image(vae: AutoencoderKLFlux2, image_tensor: torch.Tensor) -> torch.Tensor:
     """Encode an image tensor to latent space, returning a [1, 16, H/8, W/8] bfloat16 tensor."""
     with torch.no_grad():
         posterior = vae.encode(image_tensor)
@@ -85,7 +85,7 @@ def encode_image(vae: AutoencoderKL, image_tensor: torch.Tensor) -> torch.Tensor
     return latent.to(dtype=torch.bfloat16)
 
 
-def decode_latent(vae: AutoencoderKL, latent: torch.Tensor) -> Image.Image:
+def decode_latent(vae: AutoencoderKLFlux2, latent: torch.Tensor) -> Image.Image:
     """Decode a latent tensor back to a PIL image (for verification)."""
     with torch.no_grad():
         # Reverse the scaling factor

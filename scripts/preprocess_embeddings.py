@@ -1,7 +1,7 @@
 """
 preprocess_embeddings.py - Pre-compute text embeddings for SRPO training.
 
-Uses FluxPipeline.encode_prompt() to generate embeddings in the exact format
+Uses Flux2Pipeline.encode_prompt() to generate embeddings in the exact format
 the Flux 2 transformer expects. This sidesteps the Flux 1 vs Flux 2 encoder
 mismatch by using the pipeline's native encoding path.
 """
@@ -13,7 +13,7 @@ import os
 from pathlib import Path
 
 import torch
-from diffusers import FluxPipeline
+from diffusers import Flux2Pipeline
 from tqdm import tqdm
 
 logging.basicConfig(
@@ -24,7 +24,7 @@ logger = logging.getLogger(__name__)
 
 
 def parse_args() -> argparse.Namespace:
-    parser = argparse.ArgumentParser(description="Pre-compute text embeddings using FluxPipeline.encode_prompt().")
+    parser = argparse.ArgumentParser(description="Pre-compute text embeddings using Flux2Pipeline.encode_prompt().")
     parser.add_argument("--model-path", type=str, default="black-forest-labs/FLUX.1-dev",
                         help="Path or HuggingFace ID for the Flux pipeline.")
     parser.add_argument("--captions-dir", type=str, default="./data/openbanana/captions",
@@ -42,10 +42,10 @@ def parse_args() -> argparse.Namespace:
     return parser.parse_args()
 
 
-def load_pipeline(model_path: str, device: str) -> FluxPipeline:
-    """Load FluxPipeline with CPU offloading to minimize VRAM usage."""
-    logger.info("Loading FluxPipeline from %s ...", model_path)
-    pipe = FluxPipeline.from_pretrained(
+def load_pipeline(model_path: str, device: str) -> Flux2Pipeline:
+    """Load Flux2Pipeline with CPU offloading to minimize VRAM usage."""
+    logger.info("Loading Flux2Pipeline from %s ...", model_path)
+    pipe = Flux2Pipeline.from_pretrained(
         model_path,
         torch_dtype=torch.bfloat16,
         text_encoder_2=None,
@@ -55,12 +55,12 @@ def load_pipeline(model_path: str, device: str) -> FluxPipeline:
     )
     # Enable CPU offloading so only the text encoder activates on GPU during encode
     pipe.enable_model_cpu_offload(device=device if device == "cuda" else "cpu")
-    logger.info("FluxPipeline loaded with CPU offloading.")
+    logger.info("Flux2Pipeline loaded with CPU offloading.")
     return pipe
 
 
 def encode_caption(
-    pipe: FluxPipeline,
+    pipe: Flux2Pipeline,
     caption: str,
     device: str,
     max_sequence_length: int,
@@ -73,7 +73,7 @@ def encode_caption(
             device=device if torch.cuda.is_available() else "cpu",
             max_sequence_length=max_sequence_length,
         )
-    # FluxPipeline.encode_prompt returns (prompt_embeds, pooled_prompt_embeds, ...)
+    # Flux2Pipeline.encode_prompt returns (prompt_embeds, pooled_prompt_embeds, ...)
     # Handle both tuple and named outputs
     if isinstance(result, (tuple, list)):
         prompt_embeds = result[0]

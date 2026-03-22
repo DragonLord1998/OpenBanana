@@ -12,7 +12,7 @@ import time
 from pathlib import Path
 
 import torch
-from diffusers import FluxPipeline
+from diffusers import Flux2Pipeline
 from PIL import Image
 
 
@@ -105,10 +105,10 @@ def parse_args() -> argparse.Namespace:
 # Pipeline helpers
 # ---------------------------------------------------------------------------
 
-def load_pipeline(model_path: str) -> FluxPipeline:
-    """Load FluxPipeline in bfloat16 with CPU offload."""
-    print(f"Loading FluxPipeline from {model_path} ...")
-    pipe = FluxPipeline.from_pretrained(
+def load_pipeline(model_path: str) -> Flux2Pipeline:
+    """Load Flux2Pipeline in bfloat16 with CPU offload."""
+    print(f"Loading Flux2Pipeline from {model_path} ...")
+    pipe = Flux2Pipeline.from_pretrained(
         model_path,
         torch_dtype=torch.bfloat16,
         text_encoder_2=None,
@@ -117,12 +117,12 @@ def load_pipeline(model_path: str) -> FluxPipeline:
         feature_extractor=None,
     )
     pipe.enable_model_cpu_offload()
-    print("FluxPipeline loaded with CPU offload enabled.")
+    print("Flux2Pipeline loaded with CPU offload enabled.")
     return pipe
 
 
 def generate_image(
-    pipe: FluxPipeline,
+    pipe: Flux2Pipeline,
     prompt: str,
     width: int,
     height: int,
