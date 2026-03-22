@@ -200,7 +200,7 @@ def load_prompts(prompts_file: str) -> list[str]:
     path = Path(prompts_file)
     if path.exists():
         with open(path, "r", encoding="utf-8") as f:
-            prompts = [line.strip() for line in f if line.strip()]
+            prompts = [line.strip() for line in f if line.strip() and not line.strip().startswith("#")]
         print(f"Loaded {len(prompts)} prompts from {prompts_file}")
         return prompts
     else:
