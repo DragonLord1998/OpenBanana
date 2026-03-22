@@ -1,8 +1,8 @@
-# 🍌 Open Banana
+# Open Banana
 
 **An open-source LoRA fine-tune of Flux 2 Dev that captures the aesthetic quality of Google's Nano Banana Pro, trained using Semantic Relative Preference Optimization (SRPO).**
 
-Open Banana brings Nano Banana Pro's signature visual qualities — natural lighting, rich color grading, photorealistic skin tones, and spatial coherence — into the open-weight Flux 2 ecosystem, giving creators studio-grade aesthetics with full local control.
+Open Banana brings Nano Banana Pro's signature visual qualities -- natural lighting, rich color grading, photorealistic skin tones, and spatial coherence -- into the open-weight Flux 2 ecosystem, giving creators studio-grade aesthetics with full local control.
 
 ---
 
@@ -17,20 +17,27 @@ Open Banana brings Nano Banana Pro's signature visual qualities — natural ligh
 - [Architecture](#architecture)
   - [Why Flux 2 Dev Is the Right Base](#why-flux-2-dev-is-the-right-base)
   - [Targeted Layers](#targeted-layers)
+  - [Training Architecture Decision](#training-architecture-decision)
 - [Dataset](#dataset)
   - [Source](#source)
   - [Captioning Strategy](#captioning-strategy)
   - [Dataset Curation](#dataset-curation)
+  - [Preprocessing Pipeline](#preprocessing-pipeline)
 - [Training](#training)
   - [Requirements](#requirements)
   - [Environment Setup](#environment-setup)
+  - [Phase 0: Baseline Characterization](#phase-0-baseline-characterization)
+  - [Data Preparation](#data-preparation)
   - [Training Configuration](#training-configuration)
   - [Running Training](#running-training)
-  - [Monitoring](#monitoring)
+  - [Monitoring with TensorBoard](#monitoring-with-tensorboard)
+  - [Troubleshooting](#troubleshooting)
 - [Inference](#inference)
   - [Using with Diffusers](#using-with-diffusers)
   - [Using with ComfyUI](#using-with-comfyui)
+- [Evaluation](#evaluation)
 - [Results](#results)
+- [Project Structure](#project-structure)
 - [Limitations](#limitations)
 - [Roadmap](#roadmap)
 - [Citation](#citation)
@@ -41,11 +48,11 @@ Open Banana brings Nano Banana Pro's signature visual qualities — natural ligh
 
 ## Motivation
 
-Google's Nano Banana Pro (Gemini 3 Pro Image) represents a leap in AI image generation — it combines a deep reasoning core with a high-fidelity diffusion head, producing images with remarkable photorealism, accurate lighting, and natural color grading. However, it remains a proprietary, API-only model with usage limits and no local deployment option.
+Google's Nano Banana Pro (Gemini 3 Pro Image) represents a leap in AI image generation -- it combines a deep reasoning core with a high-fidelity diffusion head, producing images with remarkable photorealism, accurate lighting, and natural color grading. However, it remains a proprietary, API-only model with usage limits and no local deployment option.
 
-Flux 2 Dev, on the other hand, is an open-weight 32B parameter model built on a rectified flow transformer architecture with a Mistral-3 24B vision-language model as its text encoder. It already has the *understanding* — what it needs is better *execution* of that understanding to close the aesthetic gap with models like Nano Banana Pro.
+Flux 2 Dev, on the other hand, is an open-weight 32B parameter model built on a rectified flow transformer architecture with a Mistral-3 24B vision-language model as its text encoder. It already has the *understanding* -- what it needs is better *execution* of that understanding to close the aesthetic gap with models like Nano Banana Pro.
 
-**Open Banana bridges this gap.** Rather than attempting to replicate Nano Banana Pro's full capabilities (reasoning, text rendering, multi-reference editing), we focus on transferring its *aesthetic signature* — the visual qualities that make its outputs look distinctly polished and photorealistic.
+**Open Banana bridges this gap.** Rather than attempting to replicate Nano Banana Pro's full capabilities (reasoning, text rendering, multi-reference editing), we focus on transferring its *aesthetic signature* -- the visual qualities that make its outputs look distinctly polished and photorealistic.
 
 The key insight is that Flux 2's Mistral-3 encoder already encodes rich semantic and spatial information. The diffusion transformer just needs to be aligned to better exploit that signal. SRPO provides an efficient mechanism to do exactly this.
 
@@ -72,11 +79,11 @@ This is not standard diffusion fine-tuning (which only compares noise vectors). 
 | **Standard LoRA** (MSE on noise) | Per-step noise prediction accuracy | Good (~70-80% of target aesthetic) |
 | **Perceptual Loss Fine-tuning** | LPIPS/SSIM similarity to target | Better, but requires custom training loop |
 | **DDPO** (Policy Gradient RL) | End-to-end image quality via reward | Excellent, but high variance and slow |
-| **SRPO** (Direct-Align + semantic reward) | Full trajectory alignment with analytical gradients | Excellent, fast (<10 min), stable |
+| **SRPO** (Direct-Align + semantic reward) | Full trajectory alignment with analytical gradients | Excellent, fast (~20-40 min), stable |
 
 SRPO combines the best of both worlds: it optimizes at the image level (like RL methods) but uses analytical gradients instead of policy gradients (like standard training), making it both effective and efficient.
 
-Standard LoRA training optimizes noise prediction — the model gets good at predicting the noise that was added, but the final generated image might not actually match the aesthetic target. SRPO sidesteps this by directly evaluating the recovered image quality.
+Standard LoRA training optimizes noise prediction -- the model gets good at predicting the noise that was added, but the final generated image might not actually match the aesthetic target. SRPO sidesteps this by directly evaluating the recovered image quality.
 
 ### The Direct-Align Pipeline
 
@@ -84,43 +91,46 @@ The SRPO training pipeline consists of four stages:
 
 ```
 Stage 0: Image Generation
-┌─────────────────────────────────┐
-│  Nano Banana Pro Dataset        │
-│  200 high-quality 1K images     │
-│  (ground truth aesthetic)       │
-└──────────────┬──────────────────┘
-               │
++----------------------------------+
+|  Nano Banana Pro Dataset          |
+|  200 high-quality images          |
+|  (ground truth aesthetic)         |
++----------------+-----------------+
+                 |
 Stage 1: Noise Injection
-┌──────────────▼──────────────────┐
-│  Sample timestep t              │
-│  Inject Gaussian noise ε        │
-│  x₀ → xₜ                       │
-│  (interpolation between         │
-│   noise and clean image)        │
-└──────────────┬──────────────────┘
-               │
++----------------v-----------------+
+|  Sample timestep t                |
+|  Inject Gaussian noise e          |
+|  x0 -> xt                        |
+|  (rectified flow interpolation    |
+|   between noise and clean image)  |
++----------------+-----------------+
+                 |
 Stage 2: One-Step Denoising / Inversion
-┌──────────────▼──────────────────┐
-│  Flux 2 performs single-step    │
-│  denoising: xₜ → x̂₀            │
-│                                 │
-│  Simultaneously, inversion      │
-│  branch: xₜ → x̂_noise          │
-└──────────────┬──────────────────┘
-               │
++----------------v-----------------+
+|  Flux 2 performs single-step      |
+|  denoising: xt -> x0_hat          |
+|                                   |
+|  Simultaneously, inversion        |
+|  branch: x0 -> x_noise_hat        |
++----------------+-----------------+
+                 |
 Stage 3: Recovery + Reward Scoring
-┌──────────────▼──────────────────┐
-│  Reward branch: score(x̂₀, x₀)  │
-│  → How close is the denoised    │
-│    image to Nano Banana Pro?    │
-│                                 │
-│  Penalty branch: score(x̂_noise) │
-│  → Regularize via negative      │
-│    reward to prevent drift      │
-│                                 │
-│  Update Flux 2 weights via      │
-│  analytical gradients           │
-└─────────────────────────────────┘
++----------------v-----------------+
+|  Reward branch: HPS(x0_hat)       |
+|  -> How aesthetically pleasing    |
+|    is the denoised output?        |
+|                                   |
+|  Penalty branch: HPS(x_noise_hat) |
+|  -> Regularize via negative       |
+|    reward to prevent drift        |
+|                                   |
+|  Hinge loss with calibrated       |
+|  margin from baseline scoring     |
+|                                   |
+|  Update LoRA weights via          |
+|  analytical gradients             |
++----------------------------------+
 ```
 
 **The critical innovation of Direct-Align**: instead of running a full 20-50 step denoising chain (which is either non-differentiable or extremely memory-intensive), Direct-Align leverages the mathematical property that diffusion states are interpolations between noise and target images. This allows single-step image recovery from any timestep, making the entire pipeline differentiable and fast.
@@ -131,15 +141,19 @@ SRPO uses two complementary branches during training:
 
 **Reward Branch (Denoising)**
 - Evaluates how well the model recovers the clean image from noise
-- Reward signal is text-conditioned: bound to prompts describing desired qualities
-- Example positive conditioning: *"photorealistic, natural lighting, accurate skin tones, cinematic color grading"*
+- Scored by HPS-v2.1 (Human Preference Score) -- a CLIP-based aesthetic predictor
+- Reward signal drives the model toward higher aesthetic quality
+- Discount schedule: starts at 0.1, increases to 0.25 over training
 
 **Penalty Branch (Inversion)**
 - Regularizes the model to prevent reward hacking (e.g., oversaturation, color drift)
-- Uses negative prompt conditioning to define what to avoid
-- Example negative conditioning: *"oily skin texture, AI-generated look, oversaturated colors, flat lighting"*
+- Evaluates the model's inversion output using the same HPS-v2.1 scorer
+- Penalizes the model if the inverted output scores too high (indicating reward gaming)
+- Discount schedule: starts at 0.3, decreases to 0.01 over training
 
-This dual-branch approach means the model learns both what to pursue and what to avoid, without needing KL divergence constraints or a separate reference model.
+**Hinge Loss with Calibrated Margin**
+
+The combined loss uses a hinge function: `F.relu(-combined_score + margin)`. The margin (default 0.7) is calibrated during Phase 0 by scoring baseline Flux 2 Dev outputs with HPS-v2.1. This ensures the loss produces a non-zero learning signal -- if the baseline already scores above the margin, training would produce zero gradients.
 
 ---
 
@@ -149,7 +163,7 @@ This dual-branch approach means the model learns both what to pursue and what to
 
 Flux 2 Dev is uniquely suited for this approach:
 
-- **Mistral-3 24B text encoder**: A strong reasoning model that already encodes rich semantic, spatial, and physical understanding. The encoder *knows* what good lighting and composition should look like — the diffusion head just needs to better execute on those representations.
+- **Mistral-3 24B text encoder**: A strong reasoning model that already encodes rich semantic, spatial, and physical understanding. The encoder *knows* what good lighting and composition should look like -- the diffusion head just needs to better execute on those representations.
 
 - **Intermediate layer stacking**: Unlike Flux 1 (which used a single-layer output for prompt embeddings), Flux 2 stacks outputs from multiple intermediate Mistral layers. These intermediate representations carry nuanced information that the cross-attention layers can exploit.
 
@@ -162,8 +176,8 @@ Flux 2 Dev is uniquely suited for this approach:
 Rather than applying LoRA across the entire 32B parameter model, Open Banana specifically targets the layers where the Mistral encoder's signal meets the diffusion transformer:
 
 ```python
-target_layers = [
-    # Cross-attention layers (encoder ↔ denoiser interface)
+target_modules = [
+    # Cross-attention layers (encoder <-> denoiser interface)
     "attn.add_k_proj",      # Cross-attention key projection
     "attn.add_q_proj",      # Cross-attention query projection
     "attn.add_v_proj",      # Cross-attention value projection
@@ -185,12 +199,18 @@ target_layers = [
 ]
 ```
 
-The `add_*_proj` and `ff_context` layers are the critical junction between the Mistral encoder and the DiT — this is where the richest aesthetic signal can be injected with minimal parameter overhead.
+The `add_*_proj` and `ff_context` layers are the critical junction between the Mistral encoder and the DiT -- this is where the richest aesthetic signal can be injected with minimal parameter overhead.
 
-**Block-specific strategy** (optional, for advanced users):
-- Early transformer blocks → affect composition and layout
-- Late transformer blocks → affect details, textures, and surface quality
-- For aesthetic transfer, late blocks are likely higher-value targets
+All 12 target module names are validated against the actual Flux 2 Dev model during Phase 0 (model introspection) before training begins.
+
+### Training Architecture Decision
+
+Open Banana uses a **diffusers-native training script** with transplanted SRPO loss, rather than forking the SRPO repository directly.
+
+**Why not fork SRPO?**
+The [SRPO codebase](https://github.com/Tencent-Hunyuan/SRPO) targets Flux 1 with FSDP full fine-tuning. Adapting it for Flux 2 + LoRA + single-GPU would require removing FSDP, rewriting the Flux 1 model loading for Flux 2, rewriting the T5+CLIP encoder handling for Mistral-3, and resolving dependency conflicts. Only ~140 lines of SRPO's loss computation are actually unique and reusable.
+
+**Our approach:** Build a clean `train_openbanana.py` using diffusers (FluxPipeline, FluxTransformer2DModel), PEFT (LoRA), and bitsandbytes (NF4 quantization) -- all of which natively support Flux 2. Transplant only the SRPO Direct-Align loss math (~140 lines) from the SRPO reference codebase. This produces a clean, maintainable ~480-line training script.
 
 ---
 
@@ -201,58 +221,73 @@ The `add_*_proj` and `ff_context` layers are the critical junction between the M
 Open Banana uses the [ash12321/nano-banana-pro-generated-1k](https://huggingface.co/datasets/ash12321/nano-banana-pro-generated-1k) dataset:
 
 - **200 images** generated by Nano Banana Pro
-- **1024×1024 resolution**
+- **1024x1024 resolution** (resized to 720x720 for training)
 - **MIT licensed**
 - Diverse subject matter capturing Nano Banana Pro's aesthetic range
 
-This is well within SRPO's proven data efficiency — the original SRPO paper demonstrated effective training on Flux 1 Dev with fewer than 1,500 images.
+This is well within SRPO's proven data efficiency -- the original SRPO paper demonstrated effective training on Flux 1 Dev with fewer than 1,500 images.
 
 ### Captioning Strategy
 
 The source dataset contains images only (no captions). Captions are essential for separating *style* from *content* during training.
 
-**Captioning pipeline:**
+**Captioning pipeline** (`scripts/caption_dataset.py`):
 
 ```
-Nano Banana Pro Image
-        │
-        ▼
-┌───────────────────┐
-│  Florence 2 Large  │  ← Detailed visual description
-│  or CogVLM         │
-│  or Gemini Flash    │
-└────────┬──────────┘
-         │
-         ▼
-┌───────────────────┐
-│  Prepend trigger   │  ← "openbanana style, "
-│  word to caption   │
-└────────┬──────────┘
-         │
-         ▼
+Nano Banana Pro Image (1024x1024)
+        |
+        v
++---------------------+
+|  Florence 2 Large    |  <- Detailed visual description
+|  (full-res input)    |     from the original 1024x1024
++----------+----------+
+           |
+           v
++---------------------+
+|  Prepend trigger     |  <- "openbanana style, "
+|  word to caption     |
++----------+----------+
+           |
+           v
    Final caption:
    "openbanana style, a portrait of a young woman
     in golden hour lighting, soft bokeh background,
     warm color palette, natural skin texture..."
 ```
 
-**Trigger word**: `openbanana` — this binds the aesthetic to a specific token, allowing selective activation during inference without contaminating all generations.
+**Trigger word**: `openbanana` -- this binds the aesthetic to a specific token, allowing selective activation during inference without contaminating all generations.
 
 **Captioning guidelines:**
+- Captions are generated from the full-resolution 1024x1024 originals for maximum detail
 - Describe visual content in detail (subject, composition, lighting, colors, mood)
-- Do NOT include quality descriptors like "high quality" or "photorealistic" — let the SRPO reward handle quality alignment
-- Keep captions between 50-150 tokens for optimal Mistral encoder utilization
-- Ensure diversity in caption structure and vocabulary
+- Do NOT include quality descriptors like "high quality" or "photorealistic" -- let the SRPO reward handle quality alignment
+- Target caption lengths: 50-150 tokens for optimal Mistral encoder utilization
+- Outliers outside this range are flagged during preprocessing
 
 ### Dataset Curation
 
-Before training, curate the dataset:
+The captioning script automatically:
 
-1. **Aesthetic scoring**: Run all 200 images through a CLIP-based aesthetic predictor or LAION aesthetic scorer. Remove the bottom 10-20% — train only on peak Nano Banana Pro quality.
+1. Downloads all 200 images from HuggingFace
+2. Saves originals (1024x1024) to `data/openbanana/images_original/`
+3. Center-crops to square and resizes to 720x720 using Lanczos resampling
+4. Saves resized images to `data/openbanana/images/` (used for training)
+5. Logs caption token statistics and flags outliers
 
-2. **Diversity check**: Ensure the dataset covers multiple domains (portraits, landscapes, products, architecture, food, etc.). If clustered around one type, the LoRA will overfit to that domain rather than learning the general aesthetic.
+### Preprocessing Pipeline
 
-3. **Resolution verification**: All images should be 1024×1024. Discard any that are corrupted or significantly different in resolution.
+Training uses pre-computed embeddings and latents for VRAM efficiency (offline-first principle):
+
+**Text embeddings** (`scripts/preprocess_embeddings.py`):
+- Uses `FluxPipeline.encode_prompt()` directly -- this sidesteps the Flux 1 vs Flux 2 encoder mismatch by using the pipeline's native Mistral-3 encoding path
+- Produces `prompt_embeds` and `pooled_prompt_embeds` tensors for each caption
+- Also pre-computes embeddings for validation prompts
+
+**Image latents** (`scripts/preprocess_latents.py`):
+- Encodes all 720x720 images through the Flux 2 VAE encoder
+- Produces latent tensors of shape `[1, 16, 90, 90]` (720/8 = 90 spatial dims, 16 channels)
+- Verifies round-trip decode quality on 3 random samples
+- Allows VAE encoder to be unloaded during training (VAE decoder is still needed for SRPO reward path)
 
 ---
 
@@ -260,250 +295,211 @@ Before training, curate the dataset:
 
 ### Requirements
 
-**Hardware (minimum):**
-- 1× NVIDIA A100 80GB or H100 80GB (recommended)
-- 1× NVIDIA A6000 48GB (possible with aggressive quantization)
-- 24GB GPUs (RTX 3090/4090) — possible with QLoRA + latent caching but may require adjustments
+**Hardware:**
+- 1x NVIDIA A100 80GB (recommended) or H100 80GB
+- VRAM budget at 720x720: ~52-65 GB (comfortable headroom on 80GB)
+- VRAM budget at 1024x1024: ~65-81 GB (risky, may OOM -- see upgrade path below)
+- Disk: 100GB minimum (Flux 2 Dev is ~34GB)
+
+**VRAM breakdown (720x720):**
+
+| Component | VRAM |
+|---|---|
+| Base model (NF4 quantized) | ~19 GB |
+| LoRA params + optimizer states | ~1.6 GB |
+| HPS-v2.1 + CLIP reward model | ~2.6 GB |
+| VAE (bf16) | ~0.5 GB |
+| Activations (gradient checkpointed) | ~20-28 GB |
+| VAE decode + reward backward | ~5-8 GB |
+| CUDA overhead + fragmentation | ~3-5 GB |
+| **Total** | **~52-65 GB** |
 
 **Software:**
 - Python 3.10+
-- PyTorch 2.1+
+- PyTorch 2.6+
 - CUDA 12.1+
-- diffusers (latest from source)
-- peft >= 0.6.0
-- accelerate
-- bitsandbytes (for quantized training)
+- diffusers (latest from source, for Flux 2 support)
+- peft >= 0.14.0
+- bitsandbytes >= 0.44.0
+- transformers >= 4.45.0
+- accelerate >= 0.34.0
+- tensorboard
+- open_clip_torch (for HPS-v2.1 reward model)
+- flash-attn 2.7.0.post2
 
 ### Environment Setup
 
+The setup script handles everything automatically on RunPod:
+
 ```bash
-# Clone SRPO training code
-git clone https://github.com/Tencent-Hunyuan/SRPO.git
-cd SRPO
+# Clone the repo
+git clone https://github.com/DragonLord1998/OpenBanana.git
+cd OpenBanana
 
-# Create environment
-python -m venv venv
-source venv/bin/activate
+# Run master setup (installs all dependencies in correct order)
+bash setup/runpod_setup.sh
 
-# Install dependencies
-pip install torch torchvision --index-url https://download.pytorch.org/whl/cu121
-pip install diffusers accelerate transformers peft bitsandbytes
-pip install -r requirements.txt
-
-# Login to HuggingFace (Flux 2 Dev is gated)
-huggingface-cli login
-
-# Download Flux 2 Dev base model
-mkdir -p ./data/flux2
-huggingface-cli download --resume-download black-forest-labs/FLUX.2-dev --local-dir ./data/flux2/
-
-# Download the Nano Banana Pro dataset
-mkdir -p ./data/openbanana
-huggingface-cli download --resume-download ash12321/nano-banana-pro-generated-1k \
-    --repo-type dataset --local-dir ./data/openbanana/
+# Download model weights (~34GB Flux 2 Dev + HPS + Florence 2)
+bash scripts/download_models.sh
 ```
 
-### Captioning the Dataset
+**Dependency install order matters.** The setup script installs in this sequence to avoid conflicts:
 
-```python
-"""
-caption_dataset.py
-Generate detailed captions for the Nano Banana Pro dataset using Florence 2.
-"""
+1. Core PyTorch (2.6.0 + CUDA 12.4)
+2. Flash attention + Triton
+3. diffusers ecosystem (from source) + PEFT + bitsandbytes
+4. TensorBoard + utilities
+5. HPS-v2.1 reward model
 
-import os
-import torch
-from PIL import Image
-from transformers import AutoProcessor, AutoModelForCausalLM
+**Important:** Flux 2 Dev is a gated model. You must [accept the license](https://huggingface.co/black-forest-labs/FLUX.2-dev) on HuggingFace **before** running the download script. Do this before spinning up a GPU instance to avoid paying for idle time.
 
-TRIGGER_WORD = "openbanana style"
-IMAGE_DIR = "./data/openbanana/images"
-OUTPUT_DIR = "./data/openbanana/captions"
+### Phase 0: Baseline Characterization
 
-os.makedirs(OUTPUT_DIR, exist_ok=True)
+Before training, characterize the base model to calibrate training parameters:
 
-# Load Florence 2 Large
-model = AutoModelForCausalLM.from_pretrained(
-    "microsoft/Florence-2-large",
-    torch_dtype=torch.float16,
-    trust_remote_code=True
-).to("cuda")
-processor = AutoProcessor.from_pretrained(
-    "microsoft/Florence-2-large",
-    trust_remote_code=True
-)
+```bash
+# Generate baseline images and compute HPS-v2.1 scores
+python scripts/baseline_characterization.py
 
-for img_file in sorted(os.listdir(IMAGE_DIR)):
-    if not img_file.lower().endswith(('.png', '.jpg', '.jpeg')):
-        continue
+# Validate model layers, scheduler shift, embedding shapes
+python scripts/model_introspection.py
+```
 
-    image = Image.open(os.path.join(IMAGE_DIR, img_file)).convert("RGB")
+**What Phase 0 does:**
 
-    # Generate detailed caption
-    inputs = processor(
-        text="<MORE_DETAILED_CAPTION>",
-        images=image,
-        return_tensors="pt"
-    ).to("cuda", torch.float16)
+1. **Baseline scoring**: Generates 20-30 images from unmodified Flux 2 Dev at 720x720, scores them with HPS-v2.1 to establish the aesthetic baseline. This calibrates the hinge loss margin -- if baseline scores are already above 0.7, the margin must be raised or training produces zero gradients.
 
-    generated_ids = model.generate(
-        **inputs,
-        max_new_tokens=256,
-        num_beams=3
-    )
+2. **Layer validation**: Confirms all 12 target LoRA module names exist in the actual Flux 2 transformer. If any are missing, training would silently target nothing.
 
-    caption = processor.batch_decode(generated_ids, skip_special_tokens=True)[0]
+3. **Scheduler verification**: Reads the noise scheduler `shift` parameter from the model config. This is NOT hardcoded -- Flux 2 may use a different shift than Flux 1's default of 3.
 
-    # Prepend trigger word
-    final_caption = f"{TRIGGER_WORD}, {caption}"
+4. **Embedding introspection**: Documents Mistral-3 embedding shapes (`prompt_embeds`, `pooled_prompt_embeds`) to ensure preprocessing produces compatible tensors.
 
-    # Save caption
-    caption_file = os.path.splitext(img_file)[0] + ".txt"
-    with open(os.path.join(OUTPUT_DIR, caption_file), "w") as f:
-        f.write(final_caption)
+### Data Preparation
 
-    print(f"Captioned: {img_file}")
+```bash
+# Download dataset + caption with Florence 2 + resize to 720x720
+python scripts/caption_dataset.py
 
-print("Captioning complete.")
+# Pre-compute text embeddings (uses FluxPipeline.encode_prompt)
+python scripts/preprocess_embeddings.py
+
+# Pre-compute image latents (VAE encoding)
+python scripts/preprocess_latents.py
 ```
 
 ### Training Configuration
 
-```yaml
-# config/openbanana_srpo.yaml
+All training parameters are passed as command-line flags to `train_openbanana.py`:
 
-# === Model ===
-model:
-  name_or_path: "./data/flux2"
-  is_flux: true
-  quantize: true                    # NF4 quantization for memory efficiency
-  dtype: bf16
+| Parameter | Default | Description |
+|---|---|---|
+| `--learning_rate` | 5e-5 | AdamW learning rate (reduced from typical 1e-4 due to SRPO hinge loss gradient sparsity) |
+| `--lr_warmup_steps` | 100 | Linear warmup steps |
+| `--max_train_steps` | 2000 | Total training steps |
+| `--train_batch_size` | 1 | Batch size per step (SRPO design) |
+| `--gradient_accumulation_steps` | 4 | Effective batch size = 4 |
+| `--lora_rank` | 32 | LoRA rank (higher for aesthetic transfer) |
+| `--lora_alpha` | 32 | LoRA alpha (equal to rank for stable training) |
+| `--h` / `--w` | 720 / 720 | Training resolution (default safe for A100 80GB) |
+| `--hinge_margin` | 0.7 | SRPO hinge loss margin (calibrate from Phase 0) |
+| `--eta` | 0.3 | Noise injection strength for inversion branch |
+| `--discount_inv` | 0.3 0.01 | Penalty branch discount schedule (start, end) |
+| `--discount_pos` | 0.1 0.25 | Reward branch discount schedule (start, end) |
+| `--groundtruth_ratio` | 0.9 | Fraction of steps using ground truth images |
+| `--sampling_steps` | 50 | Denoising steps for validation sampling |
+| `--max_grad_norm` | 0.1 | Gradient clipping threshold |
+| `--checkpointing_steps` | 500 | Save LoRA checkpoint every N steps |
+| `--sample_every_n_steps` | 250 | Generate validation images every N steps |
+| `--mixed_precision` | bf16 | Mixed precision mode |
+| `--seed` | 42 | Random seed for reproducibility |
 
-# === LoRA ===
-lora:
-  rank: 32                          # Higher rank for aesthetic transfer
-  alpha: 32                         # alpha = rank for stable training
-  target_modules:
-    - "attn.to_k"
-    - "attn.to_q"
-    - "attn.to_v"
-    - "attn.to_out.0"
-    - "attn.add_k_proj"
-    - "attn.add_q_proj"
-    - "attn.add_v_proj"
-    - "attn.to_add_out"
-    - "ff.net.0.proj"
-    - "ff.net.2"
-    - "ff_context.net.0.proj"
-    - "ff_context.net.2"
-  dropout: 0.05
+**Optimizer:** AdamW with weight_decay=0.0001, betas=(0.9, 0.999). Prodigy optimizer deferred to a future version.
 
-# === SRPO Training ===
-training:
-  method: "srpo"
-  batch_size: 1                     # Single image rollout (per SRPO design)
-  gradient_accumulation_steps: 4
-  learning_rate: 1e-4
-  optimizer: "prodigy"              # Adaptive LR — no manual tuning needed
-  lr_scheduler: "cosine"
-  warmup_steps: 50
-  max_train_steps: 2000
-  mixed_precision: "bf16"
-  gradient_checkpointing: true
-  cache_latents: true               # Pre-encode images to save VRAM
-  cache_text_embeddings: true       # Pre-encode captions to save VRAM
-
-# === SRPO-Specific ===
-srpo:
-  # Reward branch (positive conditioning)
-  positive_prompt_augmentation:
-    - "photorealistic"
-    - "natural lighting"
-    - "accurate skin tones"
-    - "cinematic color grading"
-    - "sharp detail"
-    - "natural depth of field"
-
-  # Penalty branch (negative conditioning)
-  negative_prompt_augmentation:
-    - "oily skin texture"
-    - "AI-generated look"
-    - "oversaturated colors"
-    - "flat lighting"
-    - "plastic appearance"
-    - "digital noise artifacts"
-
-  # Direct-Align settings
-  use_direct_align: true
-  vis_sampling_step: 50             # Should match inference steps
-  enable_vae_gradient_checkpointing: true
-  offline_mode: true                # Use dataset instead of online rollouts
-
-# === Dataset ===
-dataset:
-  path: "./data/openbanana"
-  image_dir: "images"
-  caption_dir: "captions"
-  resolution: [1024]
-  center_crop: true
-  random_flip: true
-
-# === Saving ===
-output:
-  save_dir: "./output/open-banana-lora"
-  save_every_n_steps: 500
-  save_final: true
-
-# === Sampling (validation during training) ===
-sample:
-  enabled: true
-  every_n_steps: 250
-  prompts:
-    - "openbanana style, a close-up portrait of an elderly man with deep wrinkles, warm afternoon light"
-    - "openbanana style, a misty mountain landscape at sunrise, volumetric fog, golden light"
-    - "openbanana style, a still life of fresh fruit on a marble countertop, soft window light"
-    - "openbanana style, a street scene in Tokyo at night, neon reflections on wet pavement"
-  guidance_scale: 3.5
-  num_inference_steps: 50
-  height: 1024
-  width: 1024
-```
+**Quantization:** The base Flux 2 Dev transformer is loaded in NF4 quantization via bitsandbytes, with double quantization enabled. Only the LoRA adapter parameters (~50-100M) are trainable -- the 32B base model remains frozen.
 
 ### Running Training
 
 ```bash
-# Pre-compute text embeddings (saves significant VRAM during training)
-python preprocess_flux_embedding.py \
-    --data_dir ./data/openbanana \
-    --model_path ./data/flux2
+# Launch training + TensorBoard (one command)
+bash scripts/train_openbanana.sh
+```
 
-# Launch training
-accelerate launch train_srpo.py \
-    --config config/openbanana_srpo.yaml
+This script:
+1. Launches TensorBoard on port 6006 in the background
+2. Runs `train_openbanana.py` with all default parameters
+3. Cleans up TensorBoard on exit
 
-# Alternatively, for multi-GPU (if available)
-accelerate launch --multi_gpu --num_processes 2 train_srpo.py \
-    --config config/openbanana_srpo.yaml
+**Or run the training script directly with custom parameters:**
+
+```bash
+python train_openbanana.py \
+  --pretrained_model_name_or_path ./data/flux2 \
+  --learning_rate 5e-5 \
+  --max_train_steps 2000 \
+  --h 720 --w 720 \
+  --hinge_margin 0.7 \
+  --lora_rank 32 \
+  --tensorboard_dir ./output/logs
 ```
 
 **Expected training time:**
-- H100 80GB: ~10-15 minutes
-- A100 80GB: ~15-25 minutes
-- A6000 48GB: ~30-45 minutes (with quantization)
+- A100 80GB: ~20-40 minutes at 720x720
+- H100 80GB: ~15-25 minutes at 720x720
 
-### Monitoring
+**Optional 1024x1024 upgrade:** After confirming VRAM headroom at 720x720 (peak should be <70GB), change `--h 1024 --w 1024`. Monitor with `watch -n 1 nvidia-smi` -- if peak VRAM exceeds 75GB, fall back to 720x720.
 
-Watch for these signals during training:
+### Monitoring with TensorBoard
 
-- **Reward score increasing** → model is learning the target aesthetic
-- **Penalty score stable/decreasing** → no reward hacking occurring
-- **Validation samples improving** → visual confirmation of aesthetic transfer
-- **Reward plateauing early** → may need more diverse data or higher rank
+Training logs to TensorBoard on port 6006:
+
+```bash
+# If not using train_openbanana.sh, launch manually:
+tensorboard --logdir ./output/logs --port 6006 --bind_all
+```
+
+Access via your RunPod proxy URL or SSH tunnel.
+
+**Metrics logged per step:**
+- `train/loss` -- SRPO hinge loss
+- `train/reward_score` -- HPS-v2.1 score for denoising branch
+- `train/penalty_score` -- HPS-v2.1 score for inversion branch
+- `train/learning_rate` -- Current learning rate
+- `train/grad_norm` -- Gradient norm after clipping
+- `system/gpu_memory_gb` -- Peak GPU memory usage
+
+**Logged periodically:**
+- `validation/samples` -- Generated images every 250 steps (visual progress check)
+- `checkpoint/lora_weight_norm` -- LoRA parameter norms at each checkpoint
+
+**What to watch for:**
+- Reward score increasing -- model is learning the target aesthetic
+- Penalty score stable/decreasing -- no reward hacking occurring
+- Validation samples improving -- visual confirmation of aesthetic transfer
+- GPU memory stable -- no memory leak
 
 **Warning signs:**
-- Oversaturation in validation samples → penalty conditioning too weak
-- Color drift → increase negative prompt weight
-- Loss of prompt following → LoRA rank too high or LR too aggressive
+- Oversaturation in validation samples -- increase `discount_inv` values
+- Color drift -- increase penalty branch weight
+- Loss is zero for most steps -- hinge margin too low, recalibrate from Phase 0
+- Reward plateaus before step 500 -- reduce learning rate to 2e-5
+
+### Troubleshooting
+
+| Symptom | Likely Cause | Fix |
+|---|---|---|
+| OOM at 720x720 | Activations too large | Reduce `--gradient_accumulation_steps` to 2, or reduce `--sampling_steps` |
+| Loss is always zero | Hinge margin below baseline HPS | Run Phase 0 again, increase `--hinge_margin` |
+| Reward doesn't increase by step 250 | Gradient not flowing to LoRA | Check smoke test gradient assertions |
+| Oversaturated validation images | Reward hacking | Increase `--discount_inv` to `0.5 0.02` |
+| Reward plateaus early | Learning rate too high | Reduce to `--learning_rate 2e-5` |
+| VRAM climbs over training | Memory leak | Restart, check for tensor accumulation in logs |
+
+**Smoke test:** Before a full run, test with `--max_train_steps 10` to verify:
+- No OOM errors
+- VRAM peak < 70GB at 720x720
+- Gradients flow to LoRA parameters (checked automatically on first step)
+- Checkpoint saves and reloads correctly
 
 ---
 
@@ -522,7 +518,7 @@ pipe = FluxPipeline.from_pretrained(
 ).to("cuda")
 
 # Load Open Banana LoRA
-pipe.load_lora_weights("your-username/open-banana-lora")
+pipe.load_lora_weights("DragonLord1998/open-banana-lora")
 
 # Generate with trigger word
 image = pipe(
@@ -530,8 +526,8 @@ image = pipe(
            "flour dusted on their apron, warm natural light from a window, "
            "shallow depth of field",
     guidance_scale=3.5,
-    height=1024,
-    width=1024,
+    height=720,
+    width=720,
     num_inference_steps=50,
     max_sequence_length=512,
     generator=torch.Generator("cuda").manual_seed(42)
@@ -544,13 +540,13 @@ image.save("open_banana_output.png")
 
 ```python
 # Full strength (maximum Nano Banana Pro aesthetic)
-pipe.load_lora_weights("your-username/open-banana-lora", adapter_name="openbanana")
+pipe.load_lora_weights("DragonLord1998/open-banana-lora", adapter_name="openbanana")
 pipe.set_adapters(["openbanana"], adapter_weights=[1.0])
 
 # Subtle blend (50% aesthetic transfer)
 pipe.set_adapters(["openbanana"], adapter_weights=[0.5])
 
-# Light touch (25% — just a hint of the aesthetic)
+# Light touch (25% -- just a hint of the aesthetic)
 pipe.set_adapters(["openbanana"], adapter_weights=[0.25])
 ```
 
@@ -564,20 +560,83 @@ pipe.set_adapters(["openbanana"], adapter_weights=[0.25])
 
 ---
 
+## Evaluation
+
+After training, generate comparison images and compute metrics:
+
+```bash
+# Generate base vs LoRA comparison images (8 prompts x 5 variants)
+python scripts/inference.py --lora_path ./output/open-banana-v0.2/checkpoint-2000
+
+# Compute quantitative metrics
+python scripts/evaluate.py
+```
+
+The evaluation script computes:
+- **HPS-v2.1** (Human Preference Score) -- base vs Open Banana outputs
+- **CLIP-IQA+** -- aesthetic quality assessment
+- **LAION Aesthetic Score** -- general aesthetic rating
+- **Phase 0 comparison** -- improvement delta over the pre-training baseline
+
+Results are output as a markdown table ready to paste into this README and saved as JSON.
+
+---
+
 ## Results
 
-> ⚠️ **This section will be updated with comparative results once training is complete.**
+> **This section will be updated with results once training is complete.**
 
-Planned comparisons:
+| Metric | Flux 2 Dev (base) | Open Banana (ours) | Delta | Phase 0 Baseline |
+|---|---|---|---|---|
+| HPS-v2.1 (mean) | TBD | TBD | TBD | TBD |
+| CLIP-IQA+ (mean) | TBD | TBD | TBD | N/A |
+| LAION Aesthetic | TBD | TBD | TBD | N/A |
 
-| Metric | Flux 2 Dev (base) | Open Banana (ours) | Nano Banana Pro (target) |
-|---|---|---|---|
-| LAION Aesthetic Score | TBD | TBD | TBD |
-| CLIP-IQA+ | TBD | TBD | TBD |
-| LPIPS vs Nano Banana Pro | TBD | TBD | — |
-| Human Preference (A/B test) | TBD | TBD | TBD |
+Evaluation prompts span portraits, landscapes, food, architecture, animals, and abstract compositions to test generalization of the aesthetic transfer.
 
-Evaluation prompts will span portraits, landscapes, products, food, architecture, and abstract compositions to test generalization of the aesthetic transfer.
+---
+
+## Project Structure
+
+```
+OpenBanana/
+  train_openbanana.py              # Core training script (diffusers + PEFT + SRPO loss)
+  README.md                        # This file
+  LICENSES.md                      # License analysis for all components
+  .gitignore
+  setup/
+    runpod_setup.sh                # Master environment setup for RunPod
+  scripts/
+    baseline_characterization.py   # Phase 0: baseline images + HPS scoring
+    model_introspection.py         # Phase 0: layer names, shift, embedding shapes
+    download_models.sh             # Download Flux 2 Dev + HPS + Florence 2
+    caption_dataset.py             # Florence 2 captioning + image resize
+    preprocess_embeddings.py       # Text embedding pre-computation
+    preprocess_latents.py          # VAE latent pre-computation
+    train_openbanana.sh            # Training launcher (TensorBoard + training)
+    inference.py                   # Base vs LoRA comparison generation
+    evaluate.py                    # HPS / CLIP-IQA+ / LAION metrics
+  data/
+    validation_prompts.txt         # 22 diverse validation prompts
+```
+
+**Runtime directories** (created during execution, not committed):
+```
+  data/
+    flux2/                         # Flux 2 Dev model weights (~34GB)
+    florence2/                     # Florence 2 Large weights
+    reward_models/                 # HPS-v2.1 + CLIP ViT-H-14
+    openbanana/                    # Dataset (images + captions)
+    embeddings/                    # Pre-computed text embeddings
+    latents/                       # Pre-computed image latents
+  SRPO/                            # SRPO repo (read-only reference)
+  output/
+    baseline/                      # Phase 0 baseline images and scores
+    logs/                          # TensorBoard logs
+    open-banana-v0.2/              # Training checkpoints
+    evaluation/                    # Metrics results
+    inference/                     # Comparison images
+```
 
 ---
 
@@ -585,29 +644,32 @@ Evaluation prompts will span portraits, landscapes, products, food, architecture
 
 - **Not a full Nano Banana Pro replacement.** Open Banana transfers aesthetic qualities (lighting, color, texture), not capabilities (reasoning, text rendering, multi-reference editing). These are architectural features of the Gemini 3 backbone that cannot be captured through LoRA fine-tuning.
 
-- **Dataset size.** 200 images is functional but on the lower end. Expanding to 500-1000 diverse Nano Banana Pro outputs would likely improve generalization and reduce domain-specific overfitting.
+- **Dataset size.** 200 images is functional for SRPO but on the lower end. Expanding to 500-1000 diverse Nano Banana Pro outputs would likely improve generalization and reduce domain-specific overfitting.
 
 - **Non-commercial base.** Flux 2 Dev is available under a non-commercial license. Commercial use requires a separate license from Black Forest Labs. Alternatively, training on Flux 2 Klein (Apache 2.0) provides a commercially permissive path at reduced model capacity.
 
 - **Legal grey area.** Distilling outputs from a proprietary model (Nano Banana Pro) into an open-weight model raises IP questions. The training data is MIT-licensed, but the broader legal landscape around model distillation is evolving. Use responsibly.
 
-- **Single aesthetic.** The current approach captures one aesthetic profile. Nano Banana Pro's output quality varies by domain — the LoRA may not uniformly improve all generation types.
+- **Single aesthetic.** The current approach captures one aesthetic profile. Nano Banana Pro's output quality varies by domain -- the LoRA may not uniformly improve all generation types.
+
+- **Default training resolution.** Training defaults to 720x720 for VRAM safety on A100 80GB. This means the LoRA primarily learns 720x720 aesthetics. Inference at 1024x1024 should still work (LoRA effects transfer across resolutions) but may not be as strong as training at native resolution. An optional 1024x1024 training path is documented for GPUs with sufficient headroom.
 
 ---
 
 ## Roadmap
 
-- [ ] **v0.1** — Initial LoRA trained on 200-image dataset with standard SRPO
-- [ ] **v0.2** — Expanded dataset (500+ images) with improved diversity and captioning
-- [ ] **v0.3** — Block-specific training experiments (early vs. late transformer blocks)
-- [ ] **v0.4** — Perceptual loss ablation (LPIPS vs. SSIM vs. CLIP similarity as reward)
-- [ ] **v0.5** — Flux 2 Klein variant (Apache 2.0, commercially permissive)
-- [ ] **v1.0** — Community-evaluated release with comprehensive benchmarks
+- [ ] **v0.1** -- Initial LoRA trained on 200-image dataset with transplanted SRPO loss
+- [ ] **v0.2** -- Expanded dataset (500+ images) with improved diversity and captioning
+- [ ] **v0.3** -- Block-specific training experiments (early vs. late transformer blocks)
+- [ ] **v0.4** -- Prodigy optimizer integration, perceptual loss ablation (LPIPS vs. SSIM vs. CLIP as reward)
+- [ ] **v0.5** -- Flux 2 Klein variant (Apache 2.0, commercially permissive)
+- [ ] **v1.0** -- Community-evaluated release with comprehensive benchmarks
 
 Future directions:
 - **Multi-aesthetic profiles**: Train separate LoRAs for different Nano Banana Pro strengths (portraits, landscapes, products) and stack them
-- **Reward model experiments**: Replace SRPO's default reward with a custom aesthetic classifier trained specifically on Nano Banana Pro outputs
-- **Flux 2 Pro distillation**: If API access allows, extend to the higher-capability Flux 2 Pro as the base
+- **Reward model experiments**: Replace HPS-v2.1 with a custom aesthetic classifier trained specifically on Nano Banana Pro outputs
+- **1024x1024 native training**: Optimize memory to enable full-resolution training on A100 80GB
+- **Multi-GPU support**: Add DeepSpeed or FSDP wrapping for distributed training
 
 ---
 
@@ -620,7 +682,7 @@ If you use Open Banana in your work, please cite:
   title={Open Banana: Aesthetic Transfer from Nano Banana Pro to Flux 2 via SRPO},
   author={Open Banana Contributors},
   year={2026},
-  url={https://github.com/your-username/open-banana}
+  url={https://github.com/DragonLord1998/OpenBanana}
 }
 ```
 
@@ -643,7 +705,9 @@ And please cite the foundational SRPO paper:
 - **Open Banana LoRA weights**: MIT License
 - **Flux 2 Dev base model**: [FLUX Non-Commercial License](https://huggingface.co/black-forest-labs/FLUX.2-dev/blob/main/LICENSE.md) (commercial license available from BFL)
 - **Training dataset**: [MIT License](https://huggingface.co/datasets/ash12321/nano-banana-pro-generated-1k)
-- **SRPO training code**: [SRPO License](https://github.com/Tencent-Hunyuan/SRPO/blob/main/License.txt)
+- **SRPO training code**: [SRPO License](https://github.com/Tencent-Hunyuan/SRPO/blob/main/License.txt) (used as read-only reference; ~140 lines of loss math transplanted)
+
+See [LICENSES.md](LICENSES.md) for detailed license analysis.
 
 ---
 
