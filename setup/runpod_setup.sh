@@ -80,7 +80,8 @@ if ${PYTHON_BIN} -c "import flash_attn" 2>/dev/null; then
     echo "  flash-attn already installed, skipping."
 else
     echo "  NOTE: flash-attn build can take 5-15 minutes..."
-    ${PIP_BIN} install flash-attn triton
+    ${PIP_BIN} install flash-attn --no-build-isolation
+    ${PIP_BIN} install triton
 fi
 
 # -------------------------------------------------------
