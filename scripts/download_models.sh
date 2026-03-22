@@ -1,7 +1,7 @@
 #!/bin/bash
 # scripts/download_models.sh
 # Download all model weights required for OpenBanana training.
-# Run AFTER setup/runpod_setup.sh and after accepting gated model licenses.
+# Uses Python huggingface_hub API (no huggingface-cli dependency).
 #
 # Gated models -- accept license at these URLs before running:
 #   FLUX.2-dev: https://huggingface.co/black-forest-labs/FLUX.2-dev
@@ -18,18 +18,19 @@ echo "  OpenBanana Model Download"
 echo "  Data directory: ${DATA_DIR}"
 echo "======================================================"
 
-# Verify python3 -m huggingface_hub.commands.huggingface_cli is available and user is logged in
-if ! command -v python3 -m huggingface_hub.commands.huggingface_cli &>/dev/null; then
-    echo "ERROR: python3 -m huggingface_hub.commands.huggingface_cli not found. Run setup/runpod_setup.sh first."
+# Verify logged in
+python3 -c "
+from huggingface_hub import HfApi
+api = HfApi()
+info = api.whoami()
+print(f'  Logged in as: {info[\"name\"]}')
+" || {
+    echo "ERROR: Not logged in to HuggingFace."
+    echo "Run: python3 -c \"from huggingface_hub import login; login()\""
     exit 1
-fi
+}
 
-if ! python3 -m huggingface_hub.commands.huggingface_cli whoami &>/dev/null; then
-    echo "ERROR: Not logged in to HuggingFace. Run: python3 -m huggingface_hub.commands.huggingface_cli login"
-    exit 1
-fi
-
-echo "  Logged in as: $(python3 -m huggingface_hub.commands.huggingface_cli whoami)"
+mkdir -p "${DATA_DIR}"
 
 # -------------------------------------------------------
 # 1. Flux 2 Dev (gated -- user must accept license first)
@@ -41,15 +42,19 @@ echo "        https://huggingface.co/black-forest-labs/FLUX.2-dev"
 echo "  Size: ~33 GB. This will take a while."
 
 FLUX2_DIR="${DATA_DIR}/flux2"
-mkdir -p "${FLUX2_DIR}"
 
 if [ -f "${FLUX2_DIR}/model_index.json" ]; then
     echo "  Flux 2 Dev already downloaded, skipping."
 else
-    python3 -m huggingface_hub.commands.huggingface_cli download \
-        black-forest-labs/FLUX.2-dev \
-        --local-dir "${FLUX2_DIR}"
-    echo "  Flux 2 Dev downloaded to ${FLUX2_DIR}"
+    python3 -c "
+from huggingface_hub import snapshot_download
+snapshot_download(
+    'black-forest-labs/FLUX.2-dev',
+    local_dir='${FLUX2_DIR}',
+    resume_download=True
+)
+print('  Flux 2 Dev downloaded.')
+"
 fi
 
 # -------------------------------------------------------
@@ -66,11 +71,15 @@ HPS_WEIGHTS="${REWARD_DIR}/HPS_v2.1_compressed.pt"
 if [ -f "${HPS_WEIGHTS}" ]; then
     echo "  HPS_v2.1_compressed.pt already downloaded, skipping."
 else
-    python3 -m huggingface_hub.commands.huggingface_cli download \
-        xswu/HPSv2 \
-        HPS_v2.1_compressed.pt \
-        --local-dir "${REWARD_DIR}"
-    echo "  HPS-v2.1 weights downloaded to ${REWARD_DIR}"
+    python3 -c "
+from huggingface_hub import hf_hub_download
+hf_hub_download(
+    'xswu/HPSv2',
+    'HPS_v2.1_compressed.pt',
+    local_dir='${REWARD_DIR}'
+)
+print('  HPS-v2.1 weights downloaded.')
+"
 fi
 
 # -------------------------------------------------------
@@ -84,11 +93,15 @@ CLIP_WEIGHTS="${REWARD_DIR}/open_clip_pytorch_model.bin"
 if [ -f "${CLIP_WEIGHTS}" ]; then
     echo "  open_clip_pytorch_model.bin already downloaded, skipping."
 else
-    python3 -m huggingface_hub.commands.huggingface_cli download \
-        laion/CLIP-ViT-H-14-laion2B-s32B-b79K \
-        open_clip_pytorch_model.bin \
-        --local-dir "${REWARD_DIR}"
-    echo "  CLIP ViT-H-14 downloaded to ${REWARD_DIR}"
+    python3 -c "
+from huggingface_hub import hf_hub_download
+hf_hub_download(
+    'laion/CLIP-ViT-H-14-laion2B-s32B-b79K',
+    'open_clip_pytorch_model.bin',
+    local_dir='${REWARD_DIR}'
+)
+print('  CLIP ViT-H-14 downloaded.')
+"
 fi
 
 # -------------------------------------------------------
@@ -99,15 +112,19 @@ echo "[4/4] Downloading Florence 2 Large..."
 echo "  Size: ~1.5 GB."
 
 FLORENCE_DIR="${DATA_DIR}/florence2"
-mkdir -p "${FLORENCE_DIR}"
 
 if [ -f "${FLORENCE_DIR}/config.json" ]; then
     echo "  Florence 2 Large already downloaded, skipping."
 else
-    python3 -m huggingface_hub.commands.huggingface_cli download \
-        microsoft/Florence-2-large \
-        --local-dir "${FLORENCE_DIR}"
-    echo "  Florence 2 Large downloaded to ${FLORENCE_DIR}"
+    python3 -c "
+from huggingface_hub import snapshot_download
+snapshot_download(
+    'microsoft/Florence-2-large',
+    local_dir='${FLORENCE_DIR}',
+    resume_download=True
+)
+print('  Florence 2 Large downloaded.')
+"
 fi
 
 # -------------------------------------------------------
@@ -117,9 +134,11 @@ echo ""
 echo "======================================================"
 echo "  Download complete. Directory summary:"
 echo ""
-du -sh "${DATA_DIR}"/flux2    2>/dev/null && true
-du -sh "${DATA_DIR}"/florence2 2>/dev/null && true
-du -sh "${DATA_DIR}"/reward_models 2>/dev/null && true
+du -sh "${DATA_DIR}"/flux2    2>/dev/null || true
+du -sh "${DATA_DIR}"/florence2 2>/dev/null || true
+du -sh "${DATA_DIR}"/reward_models 2>/dev/null || true
 echo ""
-echo "  Next step: bash scripts/train_openbanana.sh"
+echo "  Next steps:"
+echo "    python scripts/baseline_characterization.py"
+echo "    python scripts/model_introspection.py"
 echo "======================================================"
