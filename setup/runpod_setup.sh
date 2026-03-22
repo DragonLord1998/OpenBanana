@@ -6,7 +6,7 @@
 
 set -euo pipefail
 
-REPO_URL="https://github.com/YOUR_USERNAME/OpenBanana.git"  # TODO: replace with real URL
+REPO_URL="https://github.com/DragonLord1998/OpenBanana.git"
 SRPO_URL="https://github.com/Tencent-Hunyuan/SRPO.git"
 CONDA_ENV="openbanana"
 PYTHON_VERSION="3.10.16"
