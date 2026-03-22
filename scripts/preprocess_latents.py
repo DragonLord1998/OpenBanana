@@ -80,8 +80,9 @@ def encode_image(vae: AutoencoderKLFlux2, image_tensor: torch.Tensor) -> torch.T
         posterior = vae.encode(image_tensor)
         # DiagonalGaussianDistribution -- sample the latent
         latent = posterior.latent_dist.sample()
-        # Apply VAE scaling factor
-        latent = latent * vae.config.scaling_factor
+        # Apply VAE scaling factor (Flux 2 VAE may not have scaling_factor in config)
+        scaling = getattr(vae.config, "scaling_factor", 1.0)
+        latent = latent * scaling
     return latent.to(dtype=torch.bfloat16)
 
 
@@ -89,7 +90,8 @@ def decode_latent(vae: AutoencoderKLFlux2, latent: torch.Tensor) -> Image.Image:
     """Decode a latent tensor back to a PIL image (for verification)."""
     with torch.no_grad():
         # Reverse the scaling factor
-        unscaled = latent.to(dtype=torch.bfloat16) / vae.config.scaling_factor
+        scaling = getattr(vae.config, "scaling_factor", 1.0)
+        unscaled = latent.to(dtype=torch.bfloat16) / scaling
         decoded = vae.decode(unscaled).sample  # [1, 3, H, W]
     # Convert from [-1, 1] float to [0, 255] uint8
     decoded = decoded.float().cpu().squeeze(0)  # [3, H, W]
